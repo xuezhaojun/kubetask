@@ -1,0 +1,8 @@
+{
+  "parallel": false,
+  "maxJobs": 4,
+  "saveLogs": false,
+  "generateOnly": false,
+  "runOnly": false,
+  "guideFile": "GUIDE.md"
+}

@@ -1,0 +1,247 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: batches.kubetask.io
+spec:
+  group: kubetask.io
+  names:
+    kind: Batch
+    listKind: BatchList
+    plural: batches
+    singular: batch
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          Batch defines a task batch template that specifies WHAT to do and WHERE to do it.
+          Batch is AI-agnostic and works with any agent.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec defines the desired state of Batch
+            properties:
+              commonContext:
+                description: |-
+                  CommonContext - contexts shared across all tasks (the constant part)
+                  These contexts are included in every task
+                items:
+                  description: |-
+                    Context represents different types of task inputs
+                    This is a polymorphic type that can represent File, Repository, API, Database, etc.
+                  properties:
+                    file:
+                      description: File context (required when Type == "File")
+                      properties:
+                        name:
+                          description: File name (e.g., "task.md", "config.json")
+                          type: string
+                        source:
+                          description: File content source (exactly one must be specified)
+                          properties:
+                            configMapKeyRef:
+                              description: Reference to a key in a ConfigMap
+                              properties:
+                                key:
+                                  description: Key of the ConfigMap to select from
+                                  type: string
+                                name:
+                                  description: Name of the ConfigMap
+                                  type: string
+                                optional:
+                                  description: Specify whether the ConfigMap must
+                                    be defined
+                                  type: boolean
+                              required:
+                              - key
+                              - name
+                              type: object
+                            inline:
+                              description: Inline content
+                              type: string
+                            secretKeyRef:
+                              description: Reference to a key in a Secret
+                              properties:
+                                key:
+                                  description: Key of the secret to select from
+                                  type: string
+                                name:
+                                  description: Name of the secret
+                                  type: string
+                                optional:
+                                  description: Specify whether the Secret must be
+                                    defined
+                                  type: boolean
+                              required:
+                              - key
+                              - name
+                              type: object
+                          type: object
+                      required:
+                      - name
+                      - source
+                      type: object
+                    repository:
+                      description: Repository context (required when Type == "Repository")
+                      properties:
+                        branch:
+                          description: Branch name
+                          type: string
+                        org:
+                          description: GitHub organization name
+                          type: string
+                        repo:
+                          description: Repository name
+                          type: string
+                      required:
+                      - branch
+                      - org
+                      - repo
+                      type: object
+                    type:
+                      description: 'Type of context: File, Repository, API, Database,
+                        etc.'
+                      enum:
+                      - File
+                      - Repository
+                      type: string
+                  required:
+                  - type
+                  type: object
+                type: array
+              variableContexts:
+                description: |-
+                  VariableContexts - variable contexts that differ per task (the variable part)
+                  Each item is a list of contexts for one task
+                  Task[i] = commonContext (constant) + variableContexts[i] (variable)
+                  Total tasks = len(variableContexts)
+
+                  Example:
+                    commonContext: [task.md, guide.md]  // constant - same for all tasks
+                    variableContexts: [                 // variable - different per task
+                      [repo1:main, repo1-config.json],  // task 1's variable part
+                      [repo2:main, repo2-config.json],  // task 2's variable part
+                    ]
+                    Generates 2 tasks:
+                      Task 1 = [task.md, guide.md] + [repo1:main, repo1-config.json]
+                      Task 2 = [task.md, guide.md] + [repo2:main, repo2-config.json]
+                items:
+                  description: ContextSet represents a set of contexts for one task
+                  items:
+                    description: |-
+                      Context represents different types of task inputs
+                      This is a polymorphic type that can represent File, Repository, API, Database, etc.
+                    properties:
+                      file:
+                        description: File context (required when Type == "File")
+                        properties:
+                          name:
+                            description: File name (e.g., "task.md", "config.json")
+                            type: string
+                          source:
+                            description: File content source (exactly one must be
+                              specified)
+                            properties:
+                              configMapKeyRef:
+                                description: Reference to a key in a ConfigMap
+                                properties:
+                                  key:
+                                    description: Key of the ConfigMap to select from
+                                    type: string
+                                  name:
+                                    description: Name of the ConfigMap
+                                    type: string
+                                  optional:
+                                    description: Specify whether the ConfigMap must
+                                      be defined
+                                    type: boolean
+                                required:
+                                - key
+                                - name
+                                type: object
+                              inline:
+                                description: Inline content
+                                type: string
+                              secretKeyRef:
+                                description: Reference to a key in a Secret
+                                properties:
+                                  key:
+                                    description: Key of the secret to select from
+                                    type: string
+                                  name:
+                                    description: Name of the secret
+                                    type: string
+                                  optional:
+                                    description: Specify whether the Secret must be
+                                      defined
+                                    type: boolean
+                                required:
+                                - key
+                                - name
+                                type: object
+                            type: object
+                        required:
+                        - name
+                        - source
+                        type: object
+                      repository:
+                        description: Repository context (required when Type == "Repository")
+                        properties:
+                          branch:
+                            description: Branch name
+                            type: string
+                          org:
+                            description: GitHub organization name
+                            type: string
+                          repo:
+                            description: Repository name
+                            type: string
+                        required:
+                        - branch
+                        - org
+                        - repo
+                        type: object
+                      type:
+                        description: 'Type of context: File, Repository, API, Database,
+                          etc.'
+                        enum:
+                        - File
+                        - Repository
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  type: array
+                type: array
+            required:
+            - commonContext
+            - variableContexts
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

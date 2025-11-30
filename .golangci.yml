@@ -1,0 +1,68 @@
+# golangci-lint configuration for CodeSweep
+# Using golangci-lint v2.6.2 with Go 1.25
+# Reference: https://golangci-lint.run/docs/usage/configuration/
+
+version: "2"
+
+run:
+  timeout: 5m
+  go: "1.25"
+
+linters:
+  # Explicitly enable linters for reproducible builds
+  # Don't use "default: all" to avoid unexpected failures when new linters are added
+  enable:
+    # Default linters (enabled by default in golangci-lint v2)
+    - errcheck      # Check for unchecked errors
+    - govet         # Vet examines Go source code
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Go static analysis (includes gosimple in v2)
+    - unused        # Check for unused code
+
+    # Additional useful linters for Kubernetes projects
+    - misspell      # Find commonly misspelled words
+    - revive        # Fast, configurable, extensible linter
+    - gosec         # Security-focused linter
+    - unconvert     # Remove unnecessary type conversions
+    - errname       # Check error naming conventions
+    - gocritic      # Comprehensive Go linter
+
+# In golangci-lint v2, formatters are separate from linters
+formatters:
+  enable:
+    - gofmt         # Check code formatting
+    - goimports     # Check import formatting
+
+linters-settings:
+  errcheck:
+    check-blank: true
+    check-type-assertions: true
+
+  govet:
+    enable-all: true
+
+  gofmt:
+    simplify: true
+
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  # Maximum issues count per linter
+  max-issues-per-linter: 0
+
+  # Maximum count of issues with the same text
+  max-same-issues: 0
+
+  # Excluding configuration per-path, per-linter, per-text and per-source
+  exclude-rules:
+    # Exclude some linters from running on tests files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gosec
+
+    # Exclude generated files
+    - path: zz_generated\.deepcopy\.go
+      linters:
+        - all

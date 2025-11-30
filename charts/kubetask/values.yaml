@@ -1,0 +1,150 @@
+# Default values for kubetask
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Controller configuration
+controller:
+  # Container image for the controller
+  image:
+    repository: ghcr.io/stolostron/kubetask-controller
+    pullPolicy: IfNotPresent
+    # Overrides the image tag whose default is the chart appVersion.
+    tag: ""
+
+  # Number of controller replicas (only 1 active with leader election)
+  replicas: 1
+
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Service account for the controller
+  serviceAccount:
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use.
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+
+  # Security context for controller pods
+  podSecurityContext:
+    runAsNonRoot: true
+    # runAsUser: 65532
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+      - ALL
+
+  # Node selector for controller pods
+  nodeSelector: {}
+
+  # Tolerations for controller pods
+  tolerations: []
+
+  # Affinity for controller pods
+  affinity: {}
+
+# Agent configuration
+agent:
+  # Container image for the agent (used in Job pods)
+  image:
+    repository: ghcr.io/stolostron/kubetask-agent
+    pullPolicy: IfNotPresent
+    tag: "latest"
+
+  # Service account for agent Jobs
+  serviceAccount:
+    # Annotations to add to the service account
+    annotations: {}
+    name: ""
+
+# Workspace PVC configuration
+workspace:
+  # Whether to create a PersistentVolumeClaim for workspace
+  enabled: true
+
+  # Storage class for the PVC
+  # Leave empty for default storage class
+  storageClass: ""
+
+  # Size of the workspace volume
+  size: 100Gi
+
+  # Access mode (ReadWriteMany required for parallel execution)
+  accessMode: ReadWriteMany
+
+# GitHub authentication
+github:
+  # GitHub token for cloning repositories
+  # Should be provided via --set github.token=xxx or from existing secret
+  token: ""
+
+  # Alternatively, use an existing secret
+  existingSecret: ""
+  existingSecretKey: "token"
+
+# Claude/AI authentication
+claude:
+  # Anthropic API key for Claude
+  apiKey: ""
+
+  # Alternatively, use an existing secret
+  existingSecret: ""
+  existingSecretKey: "api-key"
+
+  # Vertex AI configuration (if using Vertex AI)
+  vertexAI:
+    enabled: false
+    projectID: ""
+    location: ""
+    # Service account key JSON (base64 encoded)
+    serviceAccountKey: ""
+
+# Job template ConfigMap
+jobTemplate:
+  # Whether to create the default job template ConfigMap
+  create: true
+
+  # Custom job template (YAML string)
+  # If not provided, uses built-in default template
+  template: ""
+
+# Metrics and monitoring
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    additionalLabels: {}
+
+# Cleanup CronJob configuration
+cleanup:
+  # Whether to enable automatic cleanup of old BatchRuns
+  enabled: true
+
+  # Schedule for cleanup CronJob (cron format)
+  schedule: "0 2 * * *"  # Daily at 2 AM
+
+  # TTL in days for completed BatchRuns
+  ttlDays: 3
+
+  # TTL in days for failed BatchRuns
+  failedTTLDays: 7
+
+# Namespace configuration
+namespaceOverride: ""
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Additional labels for all resources
+commonLabels: {}
+
+# Additional annotations for all resources
+commonAnnotations: {}

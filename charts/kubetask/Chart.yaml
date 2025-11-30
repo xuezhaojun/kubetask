@@ -1,0 +1,16 @@
+apiVersion: v2
+name: kubetask
+description: A Kubernetes-native system for executing AI agent tasks across multiple repositories
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - automation
+  - ai-agent
+  - batch-processing
+  - kubernetes-native
+maintainers:
+  - name: KubeTask Team
+home: https://github.com/xuezhaojun/kubetask
+sources:
+  - https://github.com/xuezhaojun/kubetask

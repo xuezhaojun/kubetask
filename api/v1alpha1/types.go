@@ -1,0 +1,445 @@
+// Copyright Contributors to the KubeTask project
+
+// Package v1alpha1 contains the v1alpha1 API definitions
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope="Namespaced"
+// +kubebuilder:printcolumn:JSONPath=`.metadata.creationTimestamp`,name="Age",type=date
+
+// Batch defines a task batch template that specifies WHAT to do and WHERE to do it.
+// Batch is AI-agnostic and works with any agent.
+type Batch struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the desired state of Batch
+	Spec BatchSpec `json:"spec"`
+}
+
+// BatchSpec defines the task batch template with common and variable contexts
+type BatchSpec struct {
+	// CommonContext - contexts shared across all tasks (the constant part)
+	// These contexts are included in every task
+	// +required
+	CommonContext []Context `json:"commonContext"`
+
+	// VariableContexts - variable contexts that differ per task (the variable part)
+	// Each item is a list of contexts for one task
+	// Task[i] = commonContext (constant) + variableContexts[i] (variable)
+	// Total tasks = len(variableContexts)
+	//
+	// Example:
+	//   commonContext: [task.md, guide.md]  // constant - same for all tasks
+	//   variableContexts: [                 // variable - different per task
+	//     [repo1:main, repo1-config.json],  // task 1's variable part
+	//     [repo2:main, repo2-config.json],  // task 2's variable part
+	//   ]
+	//   Generates 2 tasks:
+	//     Task 1 = [task.md, guide.md] + [repo1:main, repo1-config.json]
+	//     Task 2 = [task.md, guide.md] + [repo2:main, repo2-config.json]
+	//
+	// +required
+	VariableContexts []ContextSet `json:"variableContexts"`
+}
+
+// ContextSet represents a set of contexts for one task
+type ContextSet []Context
+
+// ContextType defines the type of context
+// +kubebuilder:validation:Enum=File;Repository
+type ContextType string
+
+const (
+	// ContextTypeFile represents a file context (task.md, guide.md, etc.)
+	ContextTypeFile ContextType = "File"
+
+	// ContextTypeRepository represents a Git repository context
+	ContextTypeRepository ContextType = "Repository"
+
+	// Future context types:
+	// ContextTypeAPI        ContextType = "API"
+	// ContextTypeDatabase   ContextType = "Database"
+	// ContextTypeCloudResource ContextType = "CloudResource"
+)
+
+// Context represents different types of task inputs
+// This is a polymorphic type that can represent File, Repository, API, Database, etc.
+type Context struct {
+	// Type of context: File, Repository, API, Database, etc.
+	// +required
+	Type ContextType `json:"type"`
+
+	// File context (required when Type == "File")
+	// +optional
+	File *FileContext `json:"file,omitempty"`
+
+	// Repository context (required when Type == "Repository")
+	// +optional
+	Repository *RepositoryContext `json:"repository,omitempty"`
+
+	// Future context types can be added here:
+	// API *APIContext `json:"api,omitempty"`
+	// Database *DatabaseContext `json:"database,omitempty"`
+}
+
+// FileContext represents a file with content from various sources
+type FileContext struct {
+	// File name (e.g., "task.md", "config.json")
+	// +required
+	Name string `json:"name"`
+
+	// File content source (exactly one must be specified)
+	// +required
+	Source FileSource `json:"source"`
+}
+
+// FileSource represents a source for file content
+type FileSource struct {
+	// Inline content
+	// +optional
+	Inline *string `json:"inline,omitempty"`
+
+	// Reference to a key in a ConfigMap
+	// +optional
+	ConfigMapKeyRef *ConfigMapKeySelector `json:"configMapKeyRef,omitempty"`
+
+	// Reference to a key in a Secret
+	// +optional
+	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
+}
+
+// RepositoryContext represents a Git repository to work on
+type RepositoryContext struct {
+	// GitHub organization name
+	// +required
+	Org string `json:"org"`
+
+	// Repository name
+	// +required
+	Repo string `json:"repo"`
+
+	// Branch name
+	// +required
+	Branch string `json:"branch"`
+
+	// Future fields for more specific targeting:
+	// Commit SHA (optional, for specific commit)
+	// Commit *string `json:"commit,omitempty"`
+	//
+	// Tag (optional, for specific tag)
+	// Tag *string `json:"tag,omitempty"`
+	//
+	// Pull Request number (optional, for PR-based tasks)
+	// PR *int `json:"pr,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// BatchList contains a list of Batch
+type BatchList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Batch `json:"items"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope="Namespaced"
+// +kubebuilder:printcolumn:JSONPath=`.spec.batchRef`,name="Batch",type=string
+// +kubebuilder:printcolumn:JSONPath=`.status.phase`,name="Phase",type=string
+// +kubebuilder:printcolumn:JSONPath=`.status.progress.completed`,name="Completed",type=integer
+// +kubebuilder:printcolumn:JSONPath=`.status.progress.total`,name="Total",type=integer
+// +kubebuilder:printcolumn:JSONPath=`.metadata.creationTimestamp`,name="Age",type=date
+
+// BatchRun represents a specific execution instance of a Batch.
+// Each execution creates a new BatchRun.
+type BatchRun struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the desired state of BatchRun
+	Spec BatchRunSpec `json:"spec"`
+
+	// Status represents the current status of the BatchRun
+	// +optional
+	Status BatchRunStatus `json:"status,omitempty"`
+}
+
+// BatchRunSpec defines the BatchRun configuration
+// Similar to Tekton PipelineRun, supports both reference and inline definition
+type BatchRunSpec struct {
+	// Reference to an existing Batch
+	// +optional
+	BatchRef string `json:"batchRef,omitempty"`
+
+	// Inline Batch definition (alternative to BatchRef)
+	// Allows defining the batch directly without creating a separate Batch resource
+	// +optional
+	BatchSpec *BatchSpec `json:"batchSpec,omitempty"`
+
+	// Agent template reference (optional override)
+	// If not specified, uses WorkspaceConfig default or convention-based discovery
+	// +optional
+	AgentTemplateRef *AgentTemplateReference `json:"agentTemplateRef,omitempty"`
+}
+
+// BatchRunPhase represents the current phase of a BatchRun
+// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
+type BatchRunPhase string
+
+const (
+	// BatchRunPhasePending means the BatchRun has been created but not yet started
+	BatchRunPhasePending BatchRunPhase = "Pending"
+	// BatchRunPhaseRunning means the BatchRun is currently executing tasks
+	BatchRunPhaseRunning BatchRunPhase = "Running"
+	// BatchRunPhaseSucceeded means all tasks completed successfully
+	BatchRunPhaseSucceeded BatchRunPhase = "Succeeded"
+	// BatchRunPhaseFailed means one or more tasks failed
+	BatchRunPhaseFailed BatchRunPhase = "Failed"
+)
+
+// BatchRunStatus defines the observed state of BatchRun
+type BatchRunStatus struct {
+	// Execution phase
+	// +optional
+	Phase BatchRunPhase `json:"phase,omitempty"`
+
+	// Start time
+	// +optional
+	StartTime *metav1.Time `json:"startTime,omitempty"`
+
+	// Completion time
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+	// Progress statistics
+	// +optional
+	Progress ProgressStatus `json:"progress,omitempty"`
+
+	// Task details list
+	// +optional
+	Tasks []TaskStatus `json:"tasks,omitempty"`
+
+	// Kubernetes standard conditions
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// ProgressStatus tracks execution progress
+type ProgressStatus struct {
+	// Total number of tasks
+	// +optional
+	Total int `json:"total,omitempty"`
+
+	// Number of pending tasks
+	// +optional
+	Pending int `json:"pending,omitempty"`
+
+	// Number of running tasks
+	// +optional
+	Running int `json:"running,omitempty"`
+
+	// Number of completed tasks
+	// +optional
+	Completed int `json:"completed,omitempty"`
+
+	// Number of failed tasks
+	// +optional
+	Failed int `json:"failed,omitempty"`
+}
+
+// TaskPhase represents the current phase of a task
+// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
+type TaskPhase string
+
+const (
+	// TaskPhasePending means the task has not started yet
+	TaskPhasePending TaskPhase = "Pending"
+	// TaskPhaseRunning means the task is currently executing
+	TaskPhaseRunning TaskPhase = "Running"
+	// TaskPhaseSucceeded means the task completed successfully
+	TaskPhaseSucceeded TaskPhase = "Succeeded"
+	// TaskPhaseFailed means the task failed
+	TaskPhaseFailed TaskPhase = "Failed"
+)
+
+// TaskStatus represents the status of a single task
+type TaskStatus struct {
+	// Task contexts (commonContext + one target)
+	// This is what makes this task unique
+	// +required
+	Contexts []Context `json:"contexts"`
+
+	// Task status
+	// +required
+	Status TaskPhase `json:"status"`
+
+	// Kubernetes Job name
+	// +optional
+	JobName string `json:"jobName,omitempty"`
+
+	// Start time
+	// +optional
+	StartTime *metav1.Time `json:"startTime,omitempty"`
+
+	// Completion time
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// BatchRunList contains a list of BatchRun
+type BatchRunList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []BatchRun `json:"items"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope="Namespaced"
+// +kubebuilder:printcolumn:JSONPath=`.status.phase`,name="Phase",type=string
+// +kubebuilder:printcolumn:JSONPath=`.status.jobName`,name="Job",type=string
+// +kubebuilder:printcolumn:JSONPath=`.metadata.creationTimestamp`,name="Age",type=date
+
+// Task represents a single task execution.
+// Unlike BatchRun which manages multiple tasks, Task is for simple one-off executions.
+// Task is a simplified API for users who want to execute a single task without creating a Batch.
+type Task struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the desired state of Task
+	Spec TaskSpec `json:"spec"`
+
+	// Status represents the current status of the Task
+	// +optional
+	Status TaskExecutionStatus `json:"status,omitempty"`
+}
+
+// TaskSpec defines the Task configuration
+type TaskSpec struct {
+	// Contexts defines what this task operates on
+	// This includes files, repositories, and other context types
+	// Example: [task.md file, guide.md file, repository context]
+	// +required
+	Contexts []Context `json:"contexts"`
+}
+
+// TaskExecutionStatus defines the observed state of Task
+type TaskExecutionStatus struct {
+	// Execution phase
+	// +optional
+	Phase TaskPhase `json:"phase,omitempty"`
+
+	// Kubernetes Job name
+	// +optional
+	JobName string `json:"jobName,omitempty"`
+
+	// Start time
+	// +optional
+	StartTime *metav1.Time `json:"startTime,omitempty"`
+
+	// Completion time
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
+
+	// Kubernetes standard conditions
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// TaskList contains a list of Task
+type TaskList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Task `json:"items"`
+}
+
+// +genclient
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope="Namespaced"
+// +kubebuilder:printcolumn:JSONPath=`.metadata.creationTimestamp`,name="Age",type=date
+
+// WorkspaceConfig defines the workspace environment for task execution.
+// Workspace = AI agent + permissions + tools + infrastructure
+// This is the execution black box - Batch creators don't need to understand execution details.
+type WorkspaceConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// Spec defines the workspace configuration
+	Spec WorkspaceConfigSpec `json:"spec"`
+}
+
+// WorkspaceConfigSpec defines workspace configuration
+type WorkspaceConfigSpec struct {
+	// Agent template reference
+	// Reference to a ConfigMap containing the agent Job template.
+	// If not specified, controller uses convention-based discovery (ConfigMap named "kubetask-agent").
+	// If convention-based ConfigMap not found, controller uses built-in default template.
+	// +optional
+	AgentTemplateRef *AgentTemplateReference `json:"agentTemplateRef,omitempty"`
+}
+
+// AgentTemplateReference references a ConfigMap containing an agent Job template
+type AgentTemplateReference struct {
+	// Name of the ConfigMap containing the agent template
+	// +required
+	Name string `json:"name"`
+
+	// Key within the ConfigMap that contains the Job template YAML
+	// If not specified, defaults to "agent-template.yaml"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// SecretKeySelector selects a key of a Secret.
+type SecretKeySelector struct {
+	// Name of the secret
+	// +required
+	Name string `json:"name"`
+
+	// Key of the secret to select from
+	// +required
+	Key string `json:"key"`
+
+	// Specify whether the Secret must be defined
+	// +optional
+	Optional *bool `json:"optional,omitempty"`
+}
+
+// ConfigMapKeySelector selects a key of a ConfigMap.
+type ConfigMapKeySelector struct {
+	// Name of the ConfigMap
+	// +required
+	Name string `json:"name"`
+
+	// Key of the ConfigMap to select from
+	// +required
+	Key string `json:"key"`
+
+	// Specify whether the ConfigMap must be defined
+	// +optional
+	Optional *bool `json:"optional,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// WorkspaceConfigList contains a list of WorkspaceConfig
+type WorkspaceConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []WorkspaceConfig `json:"items"`
+}
