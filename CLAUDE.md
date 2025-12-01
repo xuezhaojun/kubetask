@@ -153,7 +153,7 @@ kubetask/
 ├── charts/kubetask/     # Helm chart
 ├── hack/                # Build and codegen scripts
 ├── docs/                # Documentation
-│   ├── arch.md          # Architecture documentation
+│   ├── architecture.md  # Architecture documentation
 │   └── adr/             # Architecture Decision Records
 └── Makefile             # Build automation
 ```
@@ -166,7 +166,7 @@ kubetask/
 2. Add appropriate kubebuilder markers
 3. Run `make update` to regenerate CRDs and deepcopy
 4. Run `make verify` to ensure everything is correct
-5. Update documentation in `docs/arch.md`
+5. Update documentation in `docs/architecture.md`
 
 ### Modifying Controllers
 
@@ -251,7 +251,7 @@ The agent requires minimal permissions:
 
 ### Updating Documentation
 
-1. **Architecture changes**: Update `docs/arch.md`
+1. **Architecture changes**: Update `docs/architecture.md`
 2. **API changes**: Update inline godoc comments
 3. **Helm chart**: Update `charts/kubetask/README.md`
 4. **Decisions**: Add ADR in `docs/adr/`
@@ -331,7 +331,7 @@ kubectl logs job/<job-name> -n kubetask-system
 - [Kubernetes Operator Pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
 - [Kubebuilder Book](https://book.kubebuilder.io/)
 - [Controller Runtime](https://github.com/kubernetes-sigs/controller-runtime)
-- [Architecture Documentation](docs/arch.md)
+- [Architecture Documentation](docs/architecture.md)
 
 ## Project Status
 

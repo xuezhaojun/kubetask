@@ -371,7 +371,7 @@ cleanup:
 
 ## Documentation
 
-- [Architecture](docs/arch.md) - Detailed architecture and design decisions
+- [Architecture](docs/architecture.md) - Detailed architecture and design decisions
 - [Helm Chart](charts/kubetask/README.md) - Deployment and configuration guide
 - [ADRs](docs/adr/) - Architecture Decision Records
 
