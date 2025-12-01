@@ -267,6 +267,17 @@ e2e: e2e-setup e2e-test ## Run full e2e test workflow
 	@echo "E2E tests complete"
 .PHONY: e2e
 
+##@ Agent
+
+agent-build: ## Build agent image
+	$(MAKE) -C agent build
+
+agent-push: ## Push agent image
+	$(MAKE) -C agent push
+
+agent-buildx: ## Multi-arch build and push agent image
+	$(MAKE) -C agent buildx
+
 ##@ Help
 
 # Display this help
