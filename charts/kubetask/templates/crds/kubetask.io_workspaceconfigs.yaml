@@ -46,24 +46,12 @@ spec:
           spec:
             description: Spec defines the workspace configuration
             properties:
-              agentTemplateRef:
+              agentImage:
                 description: |-
-                  Agent template reference
-                  Reference to a ConfigMap containing the agent Job template.
-                  If not specified, controller uses convention-based discovery (ConfigMap named "kubetask-agent").
-                  If convention-based ConfigMap not found, controller uses built-in default template.
-                properties:
-                  key:
-                    description: |-
-                      Key within the ConfigMap that contains the Job template YAML
-                      If not specified, defaults to "agent-template.yaml"
-                    type: string
-                  name:
-                    description: Name of the ConfigMap containing the agent template
-                    type: string
-                required:
-                - name
-                type: object
+                  Agent container image to use for task execution.
+                  The controller generates Jobs with this image.
+                  If not specified, defaults to "quay.io/zhaoxue/kubetask-agent:latest".
+                type: string
             type: object
         type: object
     served: true

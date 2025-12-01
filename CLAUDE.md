@@ -31,7 +31,8 @@ KubeTask is a Kubernetes-native system that executes AI-powered tasks across mul
 
 - **Batch** (not Bundle) - Aligns with Kubernetes `batch/v1`
 - **WorkspaceConfig** (not KubeTaskConfig) - Stable, project-independent naming
-- **AgentTemplateRef** (not JobTemplateRef) - Semantic, describes AI agents
+- **AgentImage** (not AgentTemplateRef) - Simple container image, controller generates Jobs
+- **workspaceConfigRef** - Reference from Batch/Task to WorkspaceConfig
 - **variableContexts** - Highlights constant/variable dichotomy
 
 ### Context System
@@ -210,19 +211,22 @@ make update-crds
 4. Update controller to handle new context type
 5. Update documentation
 
-### Updating Agent Template
+### Agent Image Discovery
 
-The agent template is discovered via:
-1. `BatchRun.spec.agentTemplateRef` (explicit override)
-2. Convention ConfigMap `kubetask-agent` (default)
-3. Built-in default template (fallback)
+The agent image is discovered via:
+1. `WorkspaceConfig.spec.agentImage` (from referenced WorkspaceConfig)
+2. Built-in default image (fallback: `quay.io/zhaoxue/kubetask-agent:latest`)
 
-Template variables available:
-- `{{.TaskID}}` - Task unique ID
-- `{{.BatchName}}` - Batch name
-- `{{.BatchRunName}}` - BatchRun name
-- `{{.Namespace}}` - Namespace
-- `{{.Contexts}}` - Task context JSON
+WorkspaceConfig lookup:
+- Batch/Task uses `workspaceConfigRef` to reference a WorkspaceConfig
+- If not specified, looks for WorkspaceConfig named "default" in the same namespace
+- If not found, uses built-in default image
+
+The controller generates Jobs with:
+- Labels: `kubetask.io/task`
+- Env vars: `TASK_NAME`, `TASK_NAMESPACE`
+- ServiceAccount: `kubetask-agent`
+- Owner references for garbage collection
 
 ## Kubernetes Integration
 
@@ -231,7 +235,8 @@ Template variables available:
 The controller requires permissions for:
 - Creating/updating/deleting Jobs
 - Reading/writing CR status
-- Reading ConfigMaps and Secrets
+- Reading WorkspaceConfigs
+- Reading Secrets (for future use)
 - Creating Events
 
 The agent requires minimal permissions:

@@ -214,35 +214,63 @@ KubeTask supports multiple context types:
 - **Repository Context**: GitHub repositories
 - **Extensible**: Easy to add new context types (API, Database, etc.)
 
-### Agent Template Discovery
+### WorkspaceConfig and Agent Image
 
-KubeTask discovers agent templates in this priority order:
+KubeTask uses WorkspaceConfig to define the agent container image:
 
-1. **Explicit**: `BatchRun.spec.agentTemplateRef`
-2. **Convention**: ConfigMap named `kubetask-agent`
-3. **Fallback**: Built-in default template
+1. **Batch/Task** references a WorkspaceConfig via `workspaceConfigRef`
+2. **Default**: If not specified, uses WorkspaceConfig named "default"
+3. **Fallback**: If no WorkspaceConfig found, uses built-in default image
 
-This allows flexibility while maintaining simplicity for common cases.
+```yaml
+# Create WorkspaceConfig
+apiVersion: kubetask.io/v1alpha1
+kind: WorkspaceConfig
+metadata:
+  name: default
+  namespace: kubetask-system
+spec:
+  agentImage: quay.io/myorg/claude-agent:v1.0
+```
 
 ### Multi-AI Support
 
-Use different AI agents for different tasks:
+Use different WorkspaceConfigs for different AI agents:
 
 ```bash
-# Create multiple agent templates
-kubectl create cm claude-agent --from-file=claude-template.yaml
-kubectl create cm gemini-agent --from-file=gemini-template.yaml
-
-# Use specific agent for a BatchRun
+# Create WorkspaceConfigs for different agents
 kubectl apply -f - <<EOF
 apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
+kind: WorkspaceConfig
 metadata:
-  name: try-gemini
+  name: claude-workspace
 spec:
-  batchRef: update-dependencies
-  agentTemplateRef:
-    name: gemini-agent
+  agentImage: quay.io/myorg/claude-agent:v1.0
+---
+apiVersion: kubetask.io/v1alpha1
+kind: WorkspaceConfig
+metadata:
+  name: gemini-workspace
+spec:
+  agentImage: quay.io/myorg/gemini-agent:v1.0
+EOF
+
+# Create Batch with specific workspace
+kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: Batch
+metadata:
+  name: update-with-gemini
+spec:
+  workspaceConfigRef: gemini-workspace
+  commonContext:
+    - type: File
+      file:
+        name: task.md
+        source:
+          inline: "Update dependencies"
+  variableContexts:
+    - [{type: Repository, repository: {org: myorg, repo: service-a, branch: main}}]
 EOF
 ```
 
@@ -312,7 +340,7 @@ Key configurations:
 ```yaml
 controller:
   image:
-    repository: ghcr.io/stolostron/kubetask-controller
+    repository: quay.io/zhaoxue/kubetask-controller
     tag: v0.1.0
   resources:
     limits:

@@ -11,7 +11,7 @@ BUILD_DATE := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
 # Image URL to use for building/pushing image targets
 IMG_REGISTRY ?= quay.io
-IMG_ORG ?= stolostron
+IMG_ORG ?= zhaoxue
 IMG_NAME ?= kubetask-controller
 IMG ?= $(IMG_REGISTRY)/$(IMG_ORG)/$(IMG_NAME):$(VERSION)
 

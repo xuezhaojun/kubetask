@@ -69,15 +69,13 @@ apiVersion: kubetask.io/v1alpha1
 kind: WorkspaceConfig
 ```
 
-#### 3. AgentTemplateRef (not JobTemplateRef)
+#### 3. AgentImage (simplified from AgentTemplateRef)
 
-**Rationale**: More semantic - we're configuring AI agents, not generic jobs.
+**Rationale**: Simpler API - users only need to specify the agent container image, not a full Job template.
 
 ```yaml
 spec:
-  agentTemplateRef:
-    name: claude-agent
-    key: agent-template.yaml
+  agentImage: quay.io/zhaoxue/kubetask-agent:latest
 ```
 
 #### 4. variableContexts (not targets/variants/contextSets)
@@ -96,13 +94,13 @@ spec:
 Batch (template)
 ├── BatchSpec
 │   ├── commonContext: []Context
-│   └── variableContexts: [][]Context
+│   ├── variableContexts: [][]Context
+│   └── workspaceConfigRef: string
 │
 BatchRun (execution)
 ├── BatchRunSpec
 │   ├── batchRef: string
-│   ├── batchSpec: *BatchSpec
-│   └── agentTemplateRef: *AgentTemplateReference
+│   └── batchSpec: *BatchSpec (inline, includes workspaceConfigRef)
 └── BatchRunStatus
     ├── phase: BatchRunPhase
     ├── progress: ProgressStatus
@@ -110,7 +108,8 @@ BatchRun (execution)
 
 Task (single task)
 ├── TaskSpec
-│   └── contexts: []Context
+│   ├── contexts: []Context
+│   └── workspaceConfigRef: string
 └── TaskExecutionStatus
     ├── phase: TaskPhase
     ├── jobName: string
@@ -119,7 +118,7 @@ Task (single task)
 
 WorkspaceConfig (environment)
 └── WorkspaceConfigSpec
-    └── agentTemplateRef: *AgentTemplateReference
+    └── agentImage: string
 ```
 
 ### Complete Type Definitions
@@ -131,8 +130,9 @@ type Batch struct {
 }
 
 type BatchSpec struct {
-    CommonContext    []Context
-    VariableContexts [][]Context
+    CommonContext      []Context
+    VariableContexts   [][]Context
+    WorkspaceConfigRef string  // Reference to WorkspaceConfig
 }
 
 type BatchRun struct {
@@ -141,9 +141,8 @@ type BatchRun struct {
 }
 
 type BatchRunSpec struct {
-    BatchRef         string
-    BatchSpec        *BatchSpec
-    AgentTemplateRef *AgentTemplateReference
+    BatchRef  string
+    BatchSpec *BatchSpec  // Inline batch (includes WorkspaceConfigRef)
 }
 
 type Task struct {
@@ -152,7 +151,8 @@ type Task struct {
 }
 
 type TaskSpec struct {
-    Contexts []Context
+    Contexts           []Context
+    WorkspaceConfigRef string  // Reference to WorkspaceConfig
 }
 
 type TaskExecutionStatus struct {
@@ -167,7 +167,7 @@ type WorkspaceConfig struct {
 }
 
 type WorkspaceConfigSpec struct {
-    AgentTemplateRef *AgentTemplateReference
+    AgentImage string  // Container image for the agent
 }
 
 // Context system
@@ -344,6 +344,7 @@ spec:
 |-------|------|----------|-------------|
 | `spec.commonContext` | []Context | Yes | Common context, shared by all tasks |
 | `spec.variableContexts` | [][]Context | Yes | Variable context, each element generates one task |
+| `spec.workspaceConfigRef` | String | No | Reference to WorkspaceConfig (default: "default") |
 
 **Task Generation Formula:**
 
@@ -418,13 +419,6 @@ spec:
   # batchSpec:
   #   commonContext: [...]
   #   variableContexts: [...]
-
-  # (Optional) Agent template reference
-  # If not specified, uses convention name "kubetask-agent"
-  # If convention ConfigMap doesn't exist, uses built-in default template
-  agentTemplateRef:
-    name: claude-agent  # Optional: use specific agent
-    key: agent-template.yaml  # Optional: default is "agent-template.yaml"
 
 status:
   # Execution phase (BatchRunPhase enum)
@@ -590,153 +584,60 @@ spec:
 
 ### WorkspaceConfig (Execution Configuration)
 
-WorkspaceConfig defines Agent template reference. All execution details (how to execute tasks) are encapsulated in the Agent template.
+WorkspaceConfig defines the agent container image for task execution. The controller generates Jobs using this image.
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
 kind: WorkspaceConfig
 metadata:
-  name: default-workspace
+  name: default  # Convention: "default" is used when no workspaceConfigRef is specified
   namespace: kubetask-system
 spec:
-  # Agent template reference
-  # References Job template in ConfigMap
-  # If not specified, controller uses convention name "kubetask-agent"
-  # If convention ConfigMap doesn't exist, controller uses built-in default template
-  agentTemplateRef:
-    name: kubetask-agent  # ConfigMap name
-    key: agent-template.yaml  # Key in ConfigMap, default is "agent-template.yaml"
+  # Agent container image
+  # If not specified, defaults to "quay.io/zhaoxue/kubetask-agent:latest"
+  agentImage: quay.io/myorg/custom-agent:v1.0
 ```
 
 **Field Description:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `spec.agentTemplateRef` | Object | No | Agent template reference |
-| `spec.agentTemplateRef.name` | String | Yes | ConfigMap name |
-| `spec.agentTemplateRef.key` | String | No | Key in ConfigMap (default: "agent-template.yaml") |
+| `spec.agentImage` | String | No | Agent container image (default: "quay.io/zhaoxue/kubetask-agent:latest") |
 
 **Design Points:**
-- WorkspaceConfig only cares about Agent template reference
-- All execution details encapsulated in Agent template
-- Users can freely define all aspects of Job (image, env vars, resource limits, etc.)
+- Simplified API: Only specify the agent image, controller handles Job creation
+- Controller generates Jobs with consistent structure (env vars, labels, owner references)
 - Name independent of project name, won't change if project renames
+- Tasks and BatchRuns reference WorkspaceConfig via `workspaceConfigRef` field
 
 ---
 
-## Agent Template Discovery
+## Agent Image Discovery
 
 ### Design Philosophy
 
-**Core Idea**: KubeTask only needs to know "how to create Jobs", other workspace infrastructure (NetworkPolicy, Secrets, PVC, etc.) managed by users.
+**Core Idea**: KubeTask controller generates Jobs internally, users only need to specify the agent container image.
 
 **User Philosophy**: Work is not produced by people (AI agents) alone, but by **workspace environments**. Workspace = AI intelligence + permissions + tools.
 
 ### Discovery Priority
 
-Controller searches for Agent template in this priority order:
+Controller determines the agent image in this priority order:
 
-1. **BatchRun.spec.agentTemplateRef** (highest priority) - explicitly specified
-2. **Convention ConfigMap** (default) - `kubetask-agent`
-3. **Built-in default template** (fallback) - Controller built-in template
+1. **WorkspaceConfig.spec.agentImage** (from referenced WorkspaceConfig)
+2. **Built-in default** (fallback) - `quay.io/zhaoxue/kubetask-agent:latest`
 
-### Template Format
+### How It Works
 
-Agent template uses Go template syntax (same as Helm), supports these variables:
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{.TaskID}}` | Task unique ID | `update-deps-001-task-0` |
-| `{{.BatchName}}` | Batch name | `update-dependencies` |
-| `{{.BatchRunName}}` | BatchRun name | `update-dependencies-run-001` |
-| `{{.Namespace}}` | Namespace | `kubetask-system` |
-| `{{.Contexts}}` | Task context JSON | `[{"type":"Repository",...}]` |
-
-### ConfigMap Template Examples
-
-**Basic Template**:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubetask-agent
-  namespace: kubetask-system
-data:
-  agent-template.yaml: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: "{{.TaskID}}"
-      namespace: "{{.Namespace}}"
-      labels:
-        kubetask.io/batch: "{{.BatchName}}"
-        kubetask.io/batchrun: "{{.BatchRunName}}"
-    spec:
-      template:
-        spec:
-          serviceAccountName: kubetask-agent
-          containers:
-          - name: agent
-            image: ghcr.io/myorg/claude-agent:v1.2.3
-            env:
-            - name: TASK_CONTEXTS
-              value: '{{.Contexts}}'
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: claude-credentials
-                  key: api-key
-            volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          volumes:
-          - name: workspace
-            persistentVolumeClaim:
-              claimName: kubetask-workspace
-          restartPolicy: Never
-```
-
-**Advanced Template (Multi-AI Support)**:
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gemini-agent
-  namespace: kubetask-system
-data:
-  agent-template.yaml: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: "{{.TaskID}}"
-      labels:
-        kubetask.io/agent: "gemini"
-    spec:
-      template:
-        spec:
-          serviceAccountName: gemini-agent
-          containers:
-          - name: agent
-            image: ghcr.io/myorg/gemini-agent:latest
-            env:
-            - name: TASK_CONTEXTS
-              value: '{{.Contexts}}'
-            - name: GOOGLE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: gemini-credentials
-                  key: api-key
-            volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          volumes:
-          - name: workspace
-            persistentVolumeClaim:
-              claimName: kubetask-workspace
-          restartPolicy: Never
-```
+The controller:
+1. Looks up the WorkspaceConfig referenced by `workspaceConfigRef` (defaults to "default")
+2. Uses the `agentImage` from WorkspaceConfig if specified
+3. Falls back to built-in default image if no WorkspaceConfig or agentImage found
+4. Generates a Job with consistent structure including:
+   - Labels for tracking (`kubetask.io/task`)
+   - Environment variables (`TASK_NAME`, `TASK_NAMESPACE`)
+   - Owner references for garbage collection
+   - ServiceAccount `kubetask-agent`
 
 ### Usage Scenarios
 
@@ -744,96 +645,133 @@ data:
 
 **User Operations**:
 ```bash
-# 1. Create workspace resources (user's own way)
+# 1. Create namespace and workspace resources
 kubectl create namespace team-platform
-kubectl apply -f workspace-setup.yaml  # PVC, Secrets, ServiceAccount, NetworkPolicy
+kubectl apply -f workspace-setup.yaml  # PVC, Secrets, ServiceAccount
 
-# 2. Create standard Agent template
-kubectl create configmap kubetask-agent \
-  --from-file=agent-template.yaml \
-  -n team-platform
-
-# 3. Create Batch
-kubectl apply -f batch-update-deps.yaml
-
-# 4. Create BatchRun (automatically uses convention ConfigMap)
+# 2. Create default WorkspaceConfig (optional - uses built-in default if not created)
 kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: WorkspaceConfig
+metadata:
+  name: default
+  namespace: team-platform
+spec:
+  agentImage: quay.io/myorg/claude-agent:v1.0
+EOF
+
+# 3. Create and run Task (uses "default" WorkspaceConfig automatically)
+kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: Task
+metadata:
+  name: update-service-a
+  namespace: team-platform
+spec:
+  contexts:
+    - type: File
+      file:
+        name: task.md
+        source:
+          inline: "Update dependencies"
+    - type: Repository
+      repository:
+        org: myorg
+        repo: service-a
+        branch: main
+EOF
+```
+
+#### Scenario 2: Multiple Workspace Configurations
+
+**User Operations**:
+```bash
+# 1. Create different WorkspaceConfigs for different AI agents
+kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: WorkspaceConfig
+metadata:
+  name: claude-workspace
+  namespace: team-platform
+spec:
+  agentImage: quay.io/myorg/claude-agent:v1.0
+---
+apiVersion: kubetask.io/v1alpha1
+kind: WorkspaceConfig
+metadata:
+  name: gemini-workspace
+  namespace: team-platform
+spec:
+  agentImage: quay.io/myorg/gemini-agent:v1.0
+EOF
+
+# 2. Task using Claude
+kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: Task
+metadata:
+  name: task-with-claude
+  namespace: team-platform
+spec:
+  workspaceConfigRef: claude-workspace
+  contexts:
+    - type: Repository
+      repository: {org: myorg, repo: service-a, branch: main}
+EOF
+
+# 3. Task using Gemini
+kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: Task
+metadata:
+  name: task-with-gemini
+  namespace: team-platform
+spec:
+  workspaceConfigRef: gemini-workspace
+  contexts:
+    - type: Repository
+      repository: {org: myorg, repo: service-b, branch: main}
+EOF
+```
+
+#### Scenario 3: Batch with Custom Workspace
+
+```bash
+# Create Batch with specific WorkspaceConfig
+kubectl apply -f - <<EOF
+apiVersion: kubetask.io/v1alpha1
+kind: Batch
+metadata:
+  name: update-with-gemini
+  namespace: team-platform
+spec:
+  workspaceConfigRef: gemini-workspace  # Use Gemini for this batch
+  commonContext:
+    - type: File
+      file:
+        name: task.md
+        source:
+          inline: "Update dependencies"
+  variableContexts:
+    - [{type: Repository, repository: {org: myorg, repo: service-a, branch: main}}]
+---
 apiVersion: kubetask.io/v1alpha1
 kind: BatchRun
 metadata:
   name: update-deps-001
   namespace: team-platform
 spec:
-  batchRef: update-dependencies
-  # No need to specify agentTemplateRef, automatically uses "kubetask-agent"
-EOF
-```
-
-#### Scenario 2: Testing New Template
-
-**User Operations**:
-```bash
-# 1. Create new version template (doesn't affect existing)
-kubectl create configmap kubetask-agent-v2 \
-  --from-file=agent-template-v2.yaml \
-  -n team-platform
-
-# 2. Specific BatchRun uses new template
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
-metadata:
-  name: test-new-template
-  namespace: team-platform
-spec:
-  batchRef: update-dependencies
-  agentTemplateRef:
-    name: kubetask-agent-v2  # Explicitly specify new template
-EOF
-
-# 3. Other BatchRun continues using old template
-kubectl apply -f batchrun-production.yaml  # Uses default template
-```
-
-#### Scenario 3: Multi-AI Environment
-
-**User Operations**:
-```bash
-# 1. Create multiple AI agent templates
-kubectl create cm claude-agent --from-file=claude-template.yaml -n team-platform
-kubectl create cm gemini-agent --from-file=gemini-template.yaml -n team-platform
-kubectl create cm codex-agent --from-file=codex-template.yaml -n team-platform
-
-# 2. Set default to Claude (create convention ConfigMap)
-kubectl create cm kubetask-agent \
-  --from-file=agent-template.yaml=claude-template.yaml \
-  -n team-platform
-
-# 3. Most tasks use default Claude
-kubectl apply -f batchrun-normal.yaml
-
-# 4. Specific task uses Gemini
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
-metadata:
-  name: try-gemini
-  namespace: team-platform
-spec:
-  batchRef: update-dependencies
-  agentTemplateRef:
-    name: gemini-agent  # Use Gemini
+  batchRef: update-with-gemini
 EOF
 ```
 
 ### Advantages
 
-✅ **Minimal**: 90% users only need to create `kubetask-agent` ConfigMap
-✅ **Flexible**: Supports explicit override, can test new templates or use different AI
-✅ **Good Performance**: Direct Get() call, no List() operation needed
-✅ **Clear**: Error messages explicit: "ConfigMap 'kubetask-agent' not found"
-✅ **Gradual Migration**: Can seamlessly switch template versions
-✅ **User Control**: Users fully control workspace infrastructure, KubeTask only cares about Job creation
+✅ **Simple**: Users only specify an image, no need to understand Job template structure
+✅ **Consistent**: Controller generates Jobs with consistent labels, env vars, and owner references
+✅ **Flexible**: Different WorkspaceConfigs for different AI agents
+✅ **Good Performance**: Direct Get() call for WorkspaceConfig lookup
+✅ **Clear**: Simple error messages when WorkspaceConfig not found
 ✅ **Stability**: WorkspaceConfig name independent of project name
 
 ---
@@ -846,57 +784,13 @@ EOF
 apiVersion: kubetask.io/v1alpha1
 kind: WorkspaceConfig
 metadata:
-  name: default-workspace
+  name: default  # Convention: "default" is used when no workspaceConfigRef is specified
   namespace: kubetask-system
 spec:
-  agentTemplateRef:
-    name: kubetask-agent
-    key: agent-template.yaml
+  agentImage: quay.io/myorg/claude-agent:v1.0
 ```
 
-### 2. Create Agent Template
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubetask-agent
-  namespace: kubetask-system
-data:
-  agent-template.yaml: |
-    apiVersion: batch/v1
-    kind: Job
-    metadata:
-      name: "{{.TaskID}}"
-      labels:
-        kubetask.io/batch: "{{.BatchName}}"
-        kubetask.io/batchrun: "{{.BatchRunName}}"
-    spec:
-      template:
-        spec:
-          serviceAccountName: kubetask-agent
-          containers:
-          - name: agent
-            image: ghcr.io/myorg/claude-agent:latest
-            env:
-            - name: TASK_CONTEXTS
-              value: '{{.Contexts}}'
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: claude-credentials
-                  key: api-key
-            volumeMounts:
-            - name: workspace
-              mountPath: /workspace
-          volumes:
-          - name: workspace
-            persistentVolumeClaim:
-              claimName: kubetask-workspace
-          restartPolicy: Never
-```
-
-### 3. Define Batch (What to do)
+### 2. Define Batch (What to do)
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -964,7 +858,7 @@ spec:
               key: service-b-creds.json
 ```
 
-### 4. Execute Batch
+### 3. Execute Batch
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -976,13 +870,8 @@ metadata:
     team: platform
     jira: PROJ-1234
 spec:
-  # Reference Batch
+  # Reference Batch (inherits workspaceConfigRef from Batch)
   batchRef: update-dependencies
-
-  # Optional: override workspace agent
-  # agentTemplateRef:
-  #   name: gemini-agent
-  #   key: agent-template.yaml
 ```
 
 ---
@@ -1123,24 +1012,26 @@ kubectl get workspaceconfig default-workspace -o yaml
 | `spec.repositories` | `spec.variableContexts` (with type: Repository) |
 | `spec.context.files` | `spec.commonContext` (with type: File) |
 | `spec.bundleRef` | `spec.batchRef` |
-| `spec.jobTemplateRef` | `spec.agentTemplateRef` |
+| `spec.jobTemplateRef` | `spec.workspaceConfigRef` |
 
 ---
 
 ## Convention-Based Discovery
 
-**Default agent template discovery order:**
+**Agent image discovery order:**
 
-1. **BatchRun.spec.agentTemplateRef** (explicit)
-2. **WorkspaceConfig.spec.agentTemplateRef** (configured)
-3. **Convention: `kubetask-agent`** (default ConfigMap name)
-4. **Built-in template** (fallback)
+1. **WorkspaceConfig.spec.agentImage** (from referenced WorkspaceConfig)
+2. **Built-in default** (fallback: `quay.io/zhaoxue/kubetask-agent:latest`)
+
+**WorkspaceConfig lookup:**
+- Task/Batch uses `workspaceConfigRef` field to reference a WorkspaceConfig
+- If not specified, uses WorkspaceConfig named "default" in the same namespace
+- If "default" doesn't exist, uses built-in default image
 
 This allows:
-- ✅ Explicit override per BatchRun
-- ✅ Default config per workspace
-- ✅ Convention for simple cases
-- ✅ Fallback for new users
+- ✅ Explicit WorkspaceConfig per Batch/Task
+- ✅ Convention-based default ("default" WorkspaceConfig)
+- ✅ Fallback for new users (built-in default image)
 
 ---
 
@@ -1150,13 +1041,13 @@ This allows:
 
 - **Batch**: Clearly batch processing
 - **WorkspaceConfig**: Clearly environment config
-- **AgentTemplateRef**: Clearly AI agent template
+- **AgentImage**: Simple container image reference
 - **commonContext/variableContexts**: Clearly constant/variable
 
 ### 2. Stability
 
 - **WorkspaceConfig**: Won't change even if project renames
-- **AgentTemplateRef**: Semantic, not project-specific
+- **AgentImage**: Simple, semantic field
 - **Core concepts**: Independent of project name
 
 ### 3. Flexibility
@@ -1177,9 +1068,11 @@ This allows:
 
 **Final API**:
 - ✅ **Batch** + **BatchRun** - semantic batch processing
+- ✅ **Task** - simplified single task execution
 - ✅ **WorkspaceConfig** - stable, project-independent
-- ✅ **AgentTemplateRef** - semantic agent configuration
+- ✅ **AgentImage** - simple container image configuration
 - ✅ **commonContext** + **variableContexts** - clear constant/variable model
+- ✅ **workspaceConfigRef** - reference to WorkspaceConfig from Batch/Task
 - ✅ **Context** abstraction - flexible, extensible
 
 **Philosophy**:

@@ -6,7 +6,7 @@
 controller:
   # Container image for the controller
   image:
-    repository: ghcr.io/stolostron/kubetask-controller
+    repository: quay.io/zhaoxue/kubetask-controller
     pullPolicy: IfNotPresent
     # Overrides the image tag whose default is the chart appVersion.
     tag: ""
@@ -55,7 +55,7 @@ controller:
 agent:
   # Container image for the agent (used in Job pods)
   image:
-    repository: ghcr.io/stolostron/kubetask-agent
+    repository: quay.io/zhaoxue/kubetask-agent
     pullPolicy: IfNotPresent
     tag: "latest"
 

@@ -46,6 +46,11 @@ type BatchSpec struct {
 	//
 	// +required
 	VariableContexts []ContextSet `json:"variableContexts"`
+
+	// WorkspaceConfigRef references a WorkspaceConfig for this Batch.
+	// If not specified, uses the "default" WorkspaceConfig in the same namespace.
+	// +optional
+	WorkspaceConfigRef string `json:"workspaceConfigRef,omitempty"`
 }
 
 // ContextSet represents a set of contexts for one task
@@ -183,11 +188,6 @@ type BatchRunSpec struct {
 	// Allows defining the batch directly without creating a separate Batch resource
 	// +optional
 	BatchSpec *BatchSpec `json:"batchSpec,omitempty"`
-
-	// Agent template reference (optional override)
-	// If not specified, uses WorkspaceConfig default or convention-based discovery
-	// +optional
-	AgentTemplateRef *AgentTemplateReference `json:"agentTemplateRef,omitempty"`
 }
 
 // BatchRunPhase represents the current phase of a BatchRun
@@ -333,6 +333,11 @@ type TaskSpec struct {
 	// Example: [task.md file, guide.md file, repository context]
 	// +required
 	Contexts []Context `json:"contexts"`
+
+	// WorkspaceConfigRef references a WorkspaceConfig for this task.
+	// If not specified, uses the "default" WorkspaceConfig in the same namespace.
+	// +optional
+	WorkspaceConfigRef string `json:"workspaceConfigRef,omitempty"`
 }
 
 // TaskExecutionStatus defines the observed state of Task
@@ -385,24 +390,11 @@ type WorkspaceConfig struct {
 
 // WorkspaceConfigSpec defines workspace configuration
 type WorkspaceConfigSpec struct {
-	// Agent template reference
-	// Reference to a ConfigMap containing the agent Job template.
-	// If not specified, controller uses convention-based discovery (ConfigMap named "kubetask-agent").
-	// If convention-based ConfigMap not found, controller uses built-in default template.
+	// Agent container image to use for task execution.
+	// The controller generates Jobs with this image.
+	// If not specified, defaults to "quay.io/zhaoxue/kubetask-agent:latest".
 	// +optional
-	AgentTemplateRef *AgentTemplateReference `json:"agentTemplateRef,omitempty"`
-}
-
-// AgentTemplateReference references a ConfigMap containing an agent Job template
-type AgentTemplateReference struct {
-	// Name of the ConfigMap containing the agent template
-	// +required
-	Name string `json:"name"`
-
-	// Key within the ConfigMap that contains the Job template YAML
-	// If not specified, defaults to "agent-template.yaml"
-	// +optional
-	Key string `json:"key,omitempty"`
+	AgentImage string `json:"agentImage,omitempty"`
 }
 
 // SecretKeySelector selects a key of a Secret.
