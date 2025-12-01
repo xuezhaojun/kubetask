@@ -1,21 +1,11 @@
 #!/bin/bash
 
-# Copyright Contributors to the CodeSweep project
+# Copyright Contributors to the KubeTask project
 
-source "$(dirname "${BASH_SOURCE}")/lib/init.sh"
+set -o errexit
+set -o nounset
+set -o pipefail
 
-SCRIPT_ROOT=$(dirname ${BASH_SOURCE})/..
-GOPATH="${GOPATH:-$(go env GOPATH)}"
-CODEGEN_PKG="${CODEGEN_PKG:-$(go env GOMODCACHE)/k8s.io/code-generator@v0.31.2}"
-
-verify="${VERIFY:-}"
-
-source "${CODEGEN_PKG}/kube_codegen.sh"
-
-kube::codegen::gen_client \
-  --output-pkg "github.com/stolostron/codesweep/client" \
-  --boilerplate "${SCRIPT_ROOT}/hack/boilerplate.txt" \
-  --output-dir ${SCRIPT_ROOT}/client \
-  --one-input-api api \
-  --with-watch \
-  .
+# Client generation is not currently used.
+# If typed clients are needed in the future, use controller-gen or code-generator.
+echo "Skipping client generation (not currently used)"

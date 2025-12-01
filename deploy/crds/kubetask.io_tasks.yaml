@@ -60,7 +60,7 @@ spec:
                 items:
                   description: |-
                     Context represents different types of task inputs
-                    This is a polymorphic type that can represent File, Repository, API, Database, etc.
+                    This is a polymorphic type that can represent File, API, Database, etc.
                   properties:
                     file:
                       description: File context (required when Type == "File")
@@ -113,29 +113,10 @@ spec:
                       - name
                       - source
                       type: object
-                    repository:
-                      description: Repository context (required when Type == "Repository")
-                      properties:
-                        branch:
-                          description: Branch name
-                          type: string
-                        org:
-                          description: GitHub organization name
-                          type: string
-                        repo:
-                          description: Repository name
-                          type: string
-                      required:
-                      - branch
-                      - org
-                      - repo
-                      type: object
                     type:
-                      description: 'Type of context: File, Repository, API, Database,
-                        etc.'
+                      description: 'Type of context: File, API, Database, etc.'
                       enum:
                       - File
-                      - Repository
                       type: string
                   required:
                   - type

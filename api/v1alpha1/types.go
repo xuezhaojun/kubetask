@@ -57,15 +57,12 @@ type BatchSpec struct {
 type ContextSet []Context
 
 // ContextType defines the type of context
-// +kubebuilder:validation:Enum=File;Repository
+// +kubebuilder:validation:Enum=File
 type ContextType string
 
 const (
 	// ContextTypeFile represents a file context (task.md, guide.md, etc.)
 	ContextTypeFile ContextType = "File"
-
-	// ContextTypeRepository represents a Git repository context
-	ContextTypeRepository ContextType = "Repository"
 
 	// Future context types:
 	// ContextTypeAPI        ContextType = "API"
@@ -74,19 +71,15 @@ const (
 )
 
 // Context represents different types of task inputs
-// This is a polymorphic type that can represent File, Repository, API, Database, etc.
+// This is a polymorphic type that can represent File, API, Database, etc.
 type Context struct {
-	// Type of context: File, Repository, API, Database, etc.
+	// Type of context: File, API, Database, etc.
 	// +required
 	Type ContextType `json:"type"`
 
 	// File context (required when Type == "File")
 	// +optional
 	File *FileContext `json:"file,omitempty"`
-
-	// Repository context (required when Type == "Repository")
-	// +optional
-	Repository *RepositoryContext `json:"repository,omitempty"`
 
 	// Future context types can be added here:
 	// API *APIContext `json:"api,omitempty"`
@@ -117,31 +110,6 @@ type FileSource struct {
 	// Reference to a key in a Secret
 	// +optional
 	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
-}
-
-// RepositoryContext represents a Git repository to work on
-type RepositoryContext struct {
-	// GitHub organization name
-	// +required
-	Org string `json:"org"`
-
-	// Repository name
-	// +required
-	Repo string `json:"repo"`
-
-	// Branch name
-	// +required
-	Branch string `json:"branch"`
-
-	// Future fields for more specific targeting:
-	// Commit SHA (optional, for specific commit)
-	// Commit *string `json:"commit,omitempty"`
-	//
-	// Tag (optional, for specific tag)
-	// Tag *string `json:"tag,omitempty"`
-	//
-	// Pull Request number (optional, for PR-based tasks)
-	// PR *int `json:"pr,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
