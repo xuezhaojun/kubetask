@@ -218,18 +218,29 @@ type BatchRunSpec struct {
 }
 
 // BatchRunPhase represents the current phase of a BatchRun
-// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
+// +kubebuilder:validation:Enum=Pending;Paused;Running;Succeeded;Failed
 type BatchRunPhase string
 
 const (
 	// BatchRunPhasePending means the BatchRun has been created but not yet started
 	BatchRunPhasePending BatchRunPhase = "Pending"
+	// BatchRunPhasePaused means the BatchRun is paused and no new tasks will be created.
+	// Existing running tasks will continue to execute until completion.
+	// Set annotation "kubetask.io/pause=true" to pause a BatchRun.
+	BatchRunPhasePaused BatchRunPhase = "Paused"
 	// BatchRunPhaseRunning means the BatchRun is currently executing tasks
 	BatchRunPhaseRunning BatchRunPhase = "Running"
 	// BatchRunPhaseSucceeded means all tasks completed successfully
 	BatchRunPhaseSucceeded BatchRunPhase = "Succeeded"
 	// BatchRunPhaseFailed means one or more tasks failed
 	BatchRunPhaseFailed BatchRunPhase = "Failed"
+)
+
+const (
+	// AnnotationPause is the annotation key used to pause a BatchRun.
+	// When set to "true", no new tasks will be created, but existing tasks
+	// will continue running until completion.
+	AnnotationPause = "kubetask.io/pause"
 )
 
 // BatchRunStatus defines the observed state of BatchRun

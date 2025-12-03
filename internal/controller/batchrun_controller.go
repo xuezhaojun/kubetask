@@ -58,25 +58,36 @@ func (r *BatchRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	// 4. Ensure Tasks are created for pending tasks
-	if err := r.ensureTasks(ctx, batchRun); err != nil {
-		log.Error(err, "unable to ensure tasks")
+	// 4. Check if paused
+	isPaused := r.isPaused(batchRun)
+
+	// 5. Handle pause state transitions
+	if err := r.handlePauseState(ctx, batchRun, isPaused); err != nil {
+		log.Error(err, "unable to handle pause state")
 		return ctrl.Result{}, err
 	}
 
-	// 5. Update task status from Task CR status
+	// 6. Ensure Tasks are created for pending tasks (skip if paused)
+	if !isPaused {
+		if err := r.ensureTasks(ctx, batchRun); err != nil {
+			log.Error(err, "unable to ensure tasks")
+			return ctrl.Result{}, err
+		}
+	}
+
+	// 7. Update task status from Task CR status (always run, even when paused)
 	if err := r.updateTaskStatus(ctx, batchRun); err != nil {
 		log.Error(err, "unable to update task status")
 		return ctrl.Result{}, err
 	}
 
-	// 6. Update BatchRun overall status
+	// 8. Update BatchRun overall status
 	if err := r.updateBatchRunStatus(ctx, batchRun); err != nil {
 		log.Error(err, "unable to update BatchRun status")
 		return ctrl.Result{}, err
 	}
 
-	// 7. Requeue if tasks are still running
+	// 9. Requeue if tasks are still running or pending
 	if batchRun.Status.Progress.Running > 0 || batchRun.Status.Progress.Pending > 0 {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
@@ -314,4 +325,39 @@ func (r *BatchRunReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// isPaused checks if the BatchRun has the pause annotation set to "true"
+func (r *BatchRunReconciler) isPaused(batchRun *kubetaskv1alpha1.BatchRun) bool {
+	if batchRun.Annotations == nil {
+		return false
+	}
+	return batchRun.Annotations[kubetaskv1alpha1.AnnotationPause] == "true"
+}
+
+// handlePauseState handles transitions between paused and running states
+func (r *BatchRunReconciler) handlePauseState(ctx context.Context, batchRun *kubetaskv1alpha1.BatchRun, isPaused bool) error {
+	log := log.FromContext(ctx)
+
+	currentPhase := batchRun.Status.Phase
+
+	// Transition to Paused if annotation is set and not already paused
+	if isPaused && currentPhase != kubetaskv1alpha1.BatchRunPhasePaused {
+		batchRun.Status.Phase = kubetaskv1alpha1.BatchRunPhasePaused
+		log.Info("pausing BatchRun", "name", batchRun.Name)
+		return r.Status().Update(ctx, batchRun)
+	}
+
+	// Transition from Paused to Running/Pending if annotation is removed
+	if !isPaused && currentPhase == kubetaskv1alpha1.BatchRunPhasePaused {
+		if batchRun.Status.Progress.Running > 0 {
+			batchRun.Status.Phase = kubetaskv1alpha1.BatchRunPhaseRunning
+		} else {
+			batchRun.Status.Phase = kubetaskv1alpha1.BatchRunPhasePending
+		}
+		log.Info("resuming BatchRun", "name", batchRun.Name, "phase", batchRun.Status.Phase)
+		return r.Status().Update(ctx, batchRun)
+	}
+
+	return nil
 }
