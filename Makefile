@@ -90,10 +90,28 @@ build:
 	go build -o bin/kubetask-controller ./cmd/controller
 .PHONY: build
 
-# Test
+# Test (unit tests only, no envtest)
 test:
 	go test -v ./...
 .PHONY: test
+
+# Integration test (uses envtest for fake API server)
+integration-test: envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+		go test -v ./internal/controller/... -coverprofile cover.out
+.PHONY: integration-test
+
+# Envtest K8s version
+ENVTEST_K8S_VERSION ?= 1.31.0
+
+# envtest setup
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+
+.PHONY: envtest
+envtest: $(ENVTEST) ## Download setup-envtest if not present
+$(ENVTEST): $(LOCALBIN)
+	@test -s $(ENVTEST) || \
+		GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 # Clean
 clean:
