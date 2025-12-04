@@ -256,8 +256,8 @@ e2e-undeploy: ## Undeploy controller and CRDs from kind cluster
 	kubectl delete namespace kubetask-system --ignore-not-found=true
 .PHONY: e2e-undeploy
 
-# Setup e2e environment (create cluster, build image, load image, and deploy)
-e2e-setup: e2e-kind-create e2e-docker-build e2e-kind-load e2e-verify-image e2e-deploy ## Setup complete e2e environment
+# Setup e2e environment (create cluster, build images, load images, and deploy)
+e2e-setup: e2e-kind-create e2e-docker-build e2e-agent-build e2e-kind-load e2e-agent-load e2e-verify-image e2e-deploy ## Setup complete e2e environment
 	@echo "E2E environment setup complete"
 .PHONY: e2e-setup
 
@@ -273,12 +273,31 @@ e2e-reload: e2e-docker-build e2e-kind-load e2e-verify-image ## Rebuild and reloa
 	@echo "Controller image reloaded successfully"
 .PHONY: e2e-reload
 
-# Run e2e tests (placeholder for actual test implementation)
+# Build echo agent image for e2e testing
+e2e-agent-build: ## Build echo agent image for e2e testing
+	docker build -t quay.io/zhaoxue/kubetask-agent-echo:latest workspace/agents/echo/
+.PHONY: e2e-agent-build
+
+# Load echo agent image into kind cluster
+e2e-agent-load: ## Load echo agent image into kind cluster
+	kind load docker-image quay.io/zhaoxue/kubetask-agent-echo:latest --name $(E2E_CLUSTER_NAME)
+.PHONY: e2e-agent-load
+
+# Run e2e tests
 e2e-test: ## Run e2e tests
 	@echo "Running e2e tests..."
-	@echo "TODO: Implement e2e test suite"
-	# go test -v ./test/e2e/... -timeout 30m
+	E2E_TEST_NAMESPACE=kubetask-e2e-test \
+	E2E_ECHO_IMAGE=quay.io/zhaoxue/kubetask-agent-echo:latest \
+	go test -v ./e2e/... -timeout 30m -ginkgo.v
 .PHONY: e2e-test
+
+# Run specific e2e test
+e2e-test-focus: ## Run specific e2e test (usage: make e2e-test-focus FOCUS="Task")
+	@echo "Running focused e2e tests..."
+	E2E_TEST_NAMESPACE=kubetask-e2e-test \
+	E2E_ECHO_IMAGE=quay.io/zhaoxue/kubetask-agent-echo:latest \
+	go test -v ./e2e/... -timeout 30m -ginkgo.v -ginkgo.focus="$(FOCUS)"
+.PHONY: e2e-test-focus
 
 # Full e2e test workflow (setup, test, teardown)
 e2e: e2e-setup e2e-test ## Run full e2e test workflow

@@ -596,10 +596,11 @@ func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, w
 		InitContainers:     initContainers,
 		Containers: []corev1.Container{
 			{
-				Name:         "agent",
-				Image:        wsConfig.agentImage,
-				Env:          envVars,
-				VolumeMounts: volumeMounts,
+				Name:            "agent",
+				Image:           wsConfig.agentImage,
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				Env:             envVars,
+				VolumeMounts:    volumeMounts,
 			},
 		},
 		Volumes:       volumes,

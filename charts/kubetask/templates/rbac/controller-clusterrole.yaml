@@ -46,7 +46,7 @@ rules:
   - update
   - patch
   - delete
-# ConfigMaps and Secrets (read-only for job templates and credentials)
+# ConfigMaps and Secrets (full access for task context and job templates)
 - apiGroups:
   - ""
   resources:
@@ -56,6 +56,10 @@ rules:
   - get
   - list
   - watch
+  - create
+  - update
+  - patch
+  - delete
 # Events
 - apiGroups:
   - ""
