@@ -79,17 +79,6 @@ Create the name of the controller service account to use
 {{- end }}
 
 {{/*
-Create the name of the agent service account to use
-*/}}
-{{- define "kubetask.agent.serviceAccountName" -}}
-{{- if .Values.agent.serviceAccount.name }}
-{{- .Values.agent.serviceAccount.name }}
-{{- else }}
-{{- printf "%s-agent" (include "kubetask.fullname" .) }}
-{{- end }}
-{{- end }}
-
-{{/*
 Controller image
 */}}
 {{- define "kubetask.controller.image" -}}

@@ -52,18 +52,15 @@ controller:
   affinity: {}
 
 # Agent configuration
+# NOTE: Agent ServiceAccount is NOT created by this chart.
+# Users must create their own ServiceAccount and RBAC in each namespace where tasks run,
+# and reference it in WorkspaceConfig.spec.serviceAccountName (required field).
 agent:
-  # Container image for the agent (used in Job pods)
+  # Default container image for the agent (used when WorkspaceConfig.agentImage is not set)
   image:
     repository: quay.io/zhaoxue/kubetask-agent
     pullPolicy: IfNotPresent
     tag: "latest"
-
-  # Service account for agent Jobs
-  serviceAccount:
-    # Annotations to add to the service account
-    annotations: {}
-    name: ""
 
 # Workspace PVC configuration
 workspace:

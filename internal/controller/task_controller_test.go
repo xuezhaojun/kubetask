@@ -116,7 +116,8 @@ var _ = Describe("TaskController", func() {
 					Namespace: taskNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: customAgentImage,
+					AgentImage:         customAgentImage,
+					ServiceAccountName: "test-agent",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wsConfig)).Should(Succeed())
@@ -178,7 +179,8 @@ var _ = Describe("TaskController", func() {
 					Namespace: taskNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					ToolsImage: toolsImage,
+					ToolsImage:         toolsImage,
+					ServiceAccountName: "test-agent",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wsConfig)).Should(Succeed())
@@ -266,6 +268,7 @@ var _ = Describe("TaskController", func() {
 					Namespace: taskNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
+					ServiceAccountName: "test-agent",
 					Credentials: []kubetaskv1alpha1.Credential{
 						{
 							Name: "api-token",
@@ -364,6 +367,7 @@ var _ = Describe("TaskController", func() {
 					Namespace: taskNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
+					ServiceAccountName: "test-agent",
 					PodLabels: map[string]string{
 						"network-policy": "agent-restricted",
 						"team":           "platform",
@@ -430,6 +434,7 @@ var _ = Describe("TaskController", func() {
 					Namespace: taskNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
+					ServiceAccountName: "test-agent",
 					Scheduling: &kubetaskv1alpha1.PodScheduling{
 						NodeSelector: map[string]string{
 							"kubernetes.io/os": "linux",
@@ -634,6 +639,7 @@ var _ = Describe("TaskController", func() {
 					Namespace: taskNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
+					ServiceAccountName: "test-agent",
 					DefaultContexts: []kubetaskv1alpha1.Context{
 						{
 							Type: kubetaskv1alpha1.ContextTypeFile,

@@ -493,6 +493,16 @@ type WorkspaceConfigSpec struct {
 	// This includes node selection, tolerations, and affinity rules.
 	// +optional
 	Scheduling *PodScheduling `json:"scheduling,omitempty"`
+
+	// ServiceAccountName specifies the Kubernetes ServiceAccount to use for agent pods.
+	// This controls what cluster resources the agent can access via RBAC.
+	//
+	// The ServiceAccount must exist in the same namespace where tasks are created.
+	// Users are responsible for creating the ServiceAccount and appropriate RBAC bindings
+	// based on what permissions their agent needs.
+	//
+	// +required
+	ServiceAccountName string `json:"serviceAccountName"`
 }
 
 // PodScheduling defines scheduling configuration for agent pods.

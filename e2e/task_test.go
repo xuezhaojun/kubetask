@@ -35,7 +35,8 @@ var _ = Describe("Task E2E Tests", func() {
 				Namespace: testNS,
 			},
 			Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-				AgentImage: echoImage,
+				AgentImage:         echoImage,
+				ServiceAccountName: testServiceAccount,
 			},
 		}
 		Expect(k8sClient.Create(ctx, wsConfig)).Should(Succeed())
@@ -276,7 +277,8 @@ var _ = Describe("Task E2E Tests", func() {
 					Namespace: testNS,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: echoImage,
+					AgentImage:         echoImage,
+					ServiceAccountName: testServiceAccount,
 					DefaultContexts: []kubetaskv1alpha1.Context{
 						{
 							Type: kubetaskv1alpha1.ContextTypeFile,

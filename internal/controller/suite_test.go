@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -106,6 +107,19 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
+
+	// Create default WorkspaceConfig for tests that don't specify one
+	By("Creating default WorkspaceConfig")
+	defaultWSConfig := &kubetaskv1alpha1.WorkspaceConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default",
+			Namespace: "default",
+		},
+		Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
+			ServiceAccountName: "test-agent",
+		},
+	}
+	Expect(k8sClient.Create(ctx, defaultWSConfig)).Should(Succeed())
 })
 
 var _ = AfterSuite(func() {

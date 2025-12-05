@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,9 @@ const (
 
 	// Default echo agent image
 	defaultEchoImage = "quay.io/zhaoxue/kubetask-agent-echo:latest"
+
+	// Test ServiceAccount name for e2e tests
+	testServiceAccount = "kubetask-e2e-agent"
 )
 
 func TestE2E(t *testing.T) {
@@ -111,6 +115,15 @@ var _ = BeforeSuite(func() {
 	ns.Name = testNS
 	err = k8sClient.Create(ctx, ns)
 	if err != nil && !isAlreadyExists(err) {
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	By("Creating test ServiceAccount")
+	sa := &corev1.ServiceAccount{}
+	sa.Name = testServiceAccount
+	sa.Namespace = testNS
+	err = k8sClient.Create(ctx, sa)
+	if err != nil && !isAlreadyExistsGeneric(err) {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
@@ -185,9 +198,17 @@ var _ = AfterSuite(func() {
 	GinkgoWriter.Println("E2E test cleanup complete")
 })
 
-// isAlreadyExists checks if the error is an "already exists" error
+// isAlreadyExists checks if the error is an "already exists" error for namespace
 func isAlreadyExists(err error) bool {
 	return err != nil && err.Error() == "namespaces \""+testNS+"\" already exists"
+}
+
+// isAlreadyExistsGeneric checks if the error is an "already exists" error
+func isAlreadyExistsGeneric(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "already exists")
 }
 
 // Helper function to generate unique names for test resources

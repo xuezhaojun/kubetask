@@ -361,7 +361,8 @@ var _ = Describe("BatchRunController", func() {
 					Namespace: batchRunNamespace,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: "custom-agent:v2.0.0",
+					AgentImage:         "custom-agent:v2.0.0",
+					ServiceAccountName: "test-agent",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wsConfig)).Should(Succeed())

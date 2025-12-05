@@ -28,7 +28,8 @@ var _ = Describe("BatchRun E2E Tests", func() {
 				Namespace: testNS,
 			},
 			Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-				AgentImage: echoImage,
+				AgentImage:         echoImage,
+				ServiceAccountName: testServiceAccount,
 			},
 		}
 		Expect(k8sClient.Create(ctx, wsConfig)).Should(Succeed())

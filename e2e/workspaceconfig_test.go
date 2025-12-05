@@ -30,7 +30,8 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					Namespace: testNS,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: echoImage,
+					AgentImage:         echoImage,
+					ServiceAccountName: testServiceAccount,
 					PodLabels: map[string]string{
 						"custom-label":   "custom-value",
 						"network-policy": "restricted",
@@ -114,7 +115,8 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					Namespace: testNS,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: echoImage,
+					AgentImage:         echoImage,
+					ServiceAccountName: testServiceAccount,
 					Scheduling: &kubetaskv1alpha1.PodScheduling{
 						NodeSelector: map[string]string{
 							"kubernetes.io/os": "linux",
@@ -195,7 +197,8 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					Namespace: testNS,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: echoImage,
+					AgentImage:         echoImage,
+					ServiceAccountName: testServiceAccount,
 					Credentials: []kubetaskv1alpha1.Credential{
 						{
 							Name: "test-api-key",
@@ -265,7 +268,8 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					Namespace: testNS,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: echoImage,
+					AgentImage:         echoImage,
+					ServiceAccountName: testServiceAccount,
 					DefaultContexts: []kubetaskv1alpha1.Context{
 						{
 							Type: kubetaskv1alpha1.ContextTypeFile,
@@ -357,7 +361,8 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					Namespace: testNS,
 				},
 				Spec: kubetaskv1alpha1.WorkspaceConfigSpec{
-					AgentImage: echoImage,
+					AgentImage:         echoImage,
+					ServiceAccountName: testServiceAccount,
 				},
 			}
 			Expect(k8sClient.Create(ctx, defaultWSConfig)).Should(Succeed())

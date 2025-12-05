@@ -1280,6 +1280,24 @@ spec:
                       type: object
                     type: array
                 type: object
+              serviceAccountName:
+                description: |-
+                  ServiceAccountName specifies the Kubernetes ServiceAccount to use for agent pods.
+                  This controls what cluster resources the agent can access via RBAC.
+
+                  The ServiceAccount must exist in the same namespace where tasks are created.
+                  Users are responsible for creating the ServiceAccount and appropriate RBAC bindings.
+
+                  The Helm chart provides a ClusterRole "kubetask-agent" with minimal permissions
+                  (read secrets and configmaps) that can be bound to your ServiceAccount.
+
+                  Example setup in your namespace:
+                    kubectl create serviceaccount my-agent -n <namespace>
+                    kubectl create rolebinding my-agent \
+                      --clusterrole=kubetask-agent \
+                      --serviceaccount=<namespace>:my-agent \
+                      -n <namespace>
+                type: string
               toolsImage:
                 description: |-
                   Tools container image that provides CLI tools (git, gh, kubectl, etc.)
@@ -1296,6 +1314,8 @@ spec:
                   This enables decoupling of agent and tools - each can be built and
                   versioned independently, and combined at runtime.
                 type: string
+            required:
+            - serviceAccountName
             type: object
         type: object
     served: true

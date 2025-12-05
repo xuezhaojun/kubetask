@@ -11,6 +11,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -86,7 +87,23 @@ func (r *TaskReconciler) initializeTask(ctx context.Context, task *kubetaskv1alp
 	log := log.FromContext(ctx)
 
 	// Get workspace configuration
-	wsConfig := r.getWorkspaceConfig(ctx, task)
+	wsConfig, err := r.getWorkspaceConfig(ctx, task)
+	if err != nil {
+		log.Error(err, "unable to get WorkspaceConfig")
+		// Update task status to Failed
+		task.Status.Phase = kubetaskv1alpha1.TaskPhaseFailed
+		meta.SetStatusCondition(&task.Status.Conditions, metav1.Condition{
+			Type:    "Ready",
+			Status:  metav1.ConditionFalse,
+			Reason:  "WorkspaceConfigError",
+			Message: err.Error(),
+		})
+		if updateErr := r.Status().Update(ctx, task); updateErr != nil {
+			log.Error(updateErr, "unable to update Task status")
+			return ctrl.Result{}, updateErr
+		}
+		return ctrl.Result{}, nil // Don't requeue, user needs to fix WorkspaceConfig
+	}
 
 	// Generate Job name
 	jobName := fmt.Sprintf("%s-job", task.Name)
@@ -229,16 +246,18 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // workspaceConfig holds the resolved configuration from WorkspaceConfig
 type workspaceConfig struct {
-	agentImage      string
-	toolsImage      string
-	defaultContexts []kubetaskv1alpha1.Context
-	credentials     []kubetaskv1alpha1.Credential
-	podLabels       map[string]string
-	scheduling      *kubetaskv1alpha1.PodScheduling
+	agentImage         string
+	toolsImage         string
+	defaultContexts    []kubetaskv1alpha1.Context
+	credentials        []kubetaskv1alpha1.Credential
+	podLabels          map[string]string
+	scheduling         *kubetaskv1alpha1.PodScheduling
+	serviceAccountName string
 }
 
-// getWorkspaceConfig retrieves the workspace configuration from WorkspaceConfig
-func (r *TaskReconciler) getWorkspaceConfig(ctx context.Context, task *kubetaskv1alpha1.Task) workspaceConfig {
+// getWorkspaceConfig retrieves the workspace configuration from WorkspaceConfig.
+// Returns an error if WorkspaceConfig is not found or invalid.
+func (r *TaskReconciler) getWorkspaceConfig(ctx context.Context, task *kubetaskv1alpha1.Task) (workspaceConfig, error) {
 	log := log.FromContext(ctx)
 
 	// Determine which WorkspaceConfig to use
@@ -247,7 +266,7 @@ func (r *TaskReconciler) getWorkspaceConfig(ctx context.Context, task *kubetaskv
 		configName = task.Spec.WorkspaceConfigRef
 	}
 
-	// Try to get WorkspaceConfig
+	// Get WorkspaceConfig
 	config := &kubetaskv1alpha1.WorkspaceConfig{}
 	configKey := types.NamespacedName{
 		Name:      configName,
@@ -255,26 +274,30 @@ func (r *TaskReconciler) getWorkspaceConfig(ctx context.Context, task *kubetaskv
 	}
 
 	if err := r.Get(ctx, configKey, config); err != nil {
-		if !errors.IsNotFound(err) {
-			log.Error(err, "unable to get WorkspaceConfig, using defaults", "workspaceConfig", configName)
-		}
-		return workspaceConfig{agentImage: DefaultAgentImage}
+		log.Error(err, "unable to get WorkspaceConfig", "workspaceConfig", configName)
+		return workspaceConfig{}, fmt.Errorf("WorkspaceConfig %q not found in namespace %q: %w", configName, task.Namespace, err)
 	}
 
-	// Get agent image
+	// Get agent image (optional, has default)
 	agentImage := DefaultAgentImage
 	if config.Spec.AgentImage != "" {
 		agentImage = config.Spec.AgentImage
 	}
 
-	return workspaceConfig{
-		agentImage:      agentImage,
-		toolsImage:      config.Spec.ToolsImage,
-		defaultContexts: config.Spec.DefaultContexts,
-		credentials:     config.Spec.Credentials,
-		podLabels:       config.Spec.PodLabels,
-		scheduling:      config.Spec.Scheduling,
+	// ServiceAccountName is required
+	if config.Spec.ServiceAccountName == "" {
+		return workspaceConfig{}, fmt.Errorf("WorkspaceConfig %q is missing required field serviceAccountName", configName)
 	}
+
+	return workspaceConfig{
+		agentImage:         agentImage,
+		toolsImage:         config.Spec.ToolsImage,
+		defaultContexts:    config.Spec.DefaultContexts,
+		credentials:        config.Spec.Credentials,
+		podLabels:          config.Spec.PodLabels,
+		scheduling:         config.Spec.Scheduling,
+		serviceAccountName: config.Spec.ServiceAccountName,
+	}, nil
 }
 
 // explicitMount represents a file that should be mounted at a specific path
@@ -623,7 +646,7 @@ func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, w
 
 	// Build PodSpec with scheduling configuration
 	podSpec := corev1.PodSpec{
-		ServiceAccountName: "kubetask-agent",
+		ServiceAccountName: wsConfig.serviceAccountName,
 		InitContainers:     initContainers,
 		Containers: []corev1.Container{
 			{
