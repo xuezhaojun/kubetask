@@ -90,15 +90,21 @@ build:
 	go build -o bin/kubetask-controller ./cmd/controller
 .PHONY: build
 
-# Test (unit tests only, no envtest)
+# Test runs unit tests only.
+# Integration tests are excluded via build tags (//go:build integration).
+# This follows the Kubernetes ecosystem convention (kubebuilder, controller-runtime)
+# where tests remain alongside code but are separated by build tags.
+# See: internal/controller/suite_test.go for detailed explanation.
 test:
-	go test -v ./...
+	go test -v ./internal/...
 .PHONY: test
 
-# Integration test (uses envtest for fake API server)
+# Integration test runs envtest-based controller tests.
+# Requires -tags=integration to include files with //go:build integration.
+# envtest provides a local API server and etcd for testing without a full cluster.
 integration-test: envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
-		go test -v ./internal/controller/... -coverprofile cover.out
+		go test -v -tags=integration ./internal/controller/... -coverprofile cover.out
 .PHONY: integration-test
 
 # Envtest K8s version

@@ -1,5 +1,9 @@
 // Copyright Contributors to the KubeTask project
 
+//go:build integration
+
+// See suite_test.go for explanation of the "integration" build tag pattern.
+
 package controller
 
 import (
@@ -90,7 +94,8 @@ var _ = Describe("TaskController", func() {
 				return k8sClient.Get(ctx, configMapLookupKey, createdConfigMap) == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(createdConfigMap.Data).Should(HaveKey("task.md"))
-			Expect(createdConfigMap.Data["task.md"]).Should(Equal(inlineContent))
+			// Content is wrapped in XML context tags by the controller
+			Expect(createdConfigMap.Data["task.md"]).Should(ContainSubstring(inlineContent))
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, task)).Should(Succeed())
@@ -606,7 +611,8 @@ var _ = Describe("TaskController", func() {
 			Eventually(func() bool {
 				return k8sClient.Get(ctx, contextConfigMapLookupKey, createdContextConfigMap) == nil
 			}, timeout, interval).Should(BeTrue())
-			Expect(createdContextConfigMap.Data["task.md"]).Should(Equal(configMapContent))
+			// Content is wrapped in XML context tags by the controller
+			Expect(createdContextConfigMap.Data["task.md"]).Should(ContainSubstring(configMapContent))
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, task)).Should(Succeed())

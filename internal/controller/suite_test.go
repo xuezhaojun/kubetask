@@ -1,5 +1,17 @@
 // Copyright Contributors to the KubeTask project
 
+//go:build integration
+
+// This file uses the "integration" build tag to separate envtest-based tests from unit tests.
+// This is the standard pattern in the Kubernetes ecosystem (used by kubebuilder, controller-runtime,
+// and most operator projects) because it allows tests to remain close to the code they test while
+// still enabling separate execution:
+//   - `go test ./...` runs only unit tests (no build tag)
+//   - `go test -tags=integration ./...` runs integration tests (requires envtest binaries)
+//
+// Alternative approaches like placing tests in a separate directory (e.g., test/integration/)
+// would separate tests from the code they test, making maintenance harder.
+
 // Package controller implements Kubernetes controllers for KubeTask resources
 package controller
 

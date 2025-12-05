@@ -1,5 +1,9 @@
 // Copyright Contributors to the KubeTask project
 
+//go:build integration
+
+// See suite_test.go for explanation of the "integration" build tag pattern.
+
 package controller
 
 import (

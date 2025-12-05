@@ -217,18 +217,60 @@ make update-crds
 
 ## Testing Guidelines
 
+This project uses a three-tier testing strategy:
+
+### Test Types and Commands
+
+```bash
+# Unit tests (fast, no external dependencies)
+make test
+
+# Integration tests (uses envtest, requires kubebuilder binaries)
+make integration-test
+
+# E2E tests (uses Kind cluster, full system test)
+make e2e-test
+```
+
 ### Unit Tests
 
 - Place tests alongside the code being tested
 - Use table-driven tests where appropriate
 - Mock Kubernetes client using controller-runtime fakes
+- No special build tags required
+
+### Integration Tests (envtest)
+
+Integration tests use [envtest](https://book.kubebuilder.io/reference/envtest.html) to run a local API server and etcd, allowing controller testing without a full cluster.
+
+**Build Tag Pattern**: We use `//go:build integration` to separate integration tests from unit tests. This is the **standard pattern in the Kubernetes ecosystem**, used by:
+- [kubebuilder](https://github.com/kubernetes-sigs/kubebuilder) generated projects
+- [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime)
+- Most Kubernetes operator projects
+
+**Why this pattern?**
+- Tests remain close to the code they test (easier maintenance)
+- Clear separation: `go test ./...` runs unit tests, `go test -tags=integration ./...` runs integration tests
+- CI can run different test types in parallel
+- Alternative (separate `test/integration/` directory) separates tests from code, making maintenance harder
+
+**File structure**:
+```
+internal/controller/
+├── task_controller.go           # Controller implementation
+├── task_controller_test.go      # Integration tests (//go:build integration)
+├── batchrun_controller.go
+├── batchrun_controller_test.go  # Integration tests (//go:build integration)
+└── suite_test.go                # Test suite setup (//go:build integration)
+```
 
 ### E2E Tests
 
-- Use Kind cluster for e2e testing
+- Located in `e2e/` directory
+- Use Kind cluster for full system testing
 - Test complete workflows (Batch → BatchRun → Jobs)
 - Verify status updates and conditions
-- Check that cleanup jobs work correctly
+- Check that cleanup works correctly
 
 ## Common Tasks
 
