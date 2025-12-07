@@ -127,8 +127,8 @@ var _ = Describe("Task E2E Tests", func() {
 		})
 	})
 
-	Context("Task with multiple contexts aggregated", func() {
-		It("should aggregate multiple contexts into task.md", func() {
+	Context("Task with multiple file contexts", func() {
+		It("should mount multiple files and complete successfully", func() {
 			taskName := uniqueName("task-multi")
 			content1 := "# Part 1: Introduction\n\nThis is the introduction."
 			content2 := "# Part 2: Details\n\nThese are the details."

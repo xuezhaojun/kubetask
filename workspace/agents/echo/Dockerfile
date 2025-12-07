@@ -16,6 +16,7 @@ RUN adduser -D -s /bin/bash agent
 USER agent
 WORKDIR ${WORKSPACE_DIR}
 
-# Default entrypoint - simply echo the content of task.md
-# This is useful for e2e testing to verify the task file is correctly mounted
-ENTRYPOINT ["sh", "-c", "echo '=== Task Content ===' && cat ${WORKSPACE_DIR}/task.md && echo '' && echo '=== Task Completed ==='"]
+# Default entrypoint - echo the content of all files in the workspace directory
+# This is useful for e2e testing to verify files are correctly mounted
+# It recursively finds all files and prints their path and content
+ENTRYPOINT ["sh", "-c", "echo '=== Task Content ===' && find ${WORKSPACE_DIR} -type f -print0 2>/dev/null | sort -z | xargs -0 -I {} sh -c 'echo \"--- File: {} ---\" && cat \"{}\" && echo' && echo '=== Task Completed ==='"]
