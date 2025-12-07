@@ -90,7 +90,7 @@ spec:
   commonContext:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Update dependencies to latest versions.
@@ -149,7 +149,7 @@ spec:
   commonContext:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: "Update go.mod to Go 1.22 and run go mod tidy"
   variableContexts:
@@ -166,7 +166,7 @@ spec:
   commonContext:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: "Fix CVE-2024-XXXXX by updating package X to version Y"
   variableContexts:
@@ -182,7 +182,7 @@ spec:
   commonContext:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: "Rename function oldName to newName across the codebase"
 ```
@@ -196,7 +196,7 @@ spec:
   commonContext:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: "Update README with new installation instructions"
 ```
@@ -211,6 +211,7 @@ KubeTask supports multiple context types:
   - Inline content
   - From ConfigMap
   - From Secret
+  - **Path-based aggregation**: Multiple contexts with the same `filePath` are aggregated into a single file
 - **Repository Context**: GitHub repositories
 - **Extensible**: Easy to add new context types (API, Database, etc.)
 
@@ -266,7 +267,7 @@ spec:
   commonContext:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: "Update dependencies"
   variableContexts:
