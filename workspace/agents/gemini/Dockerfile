@@ -1,7 +1,7 @@
 # Gemini CLI Agent Image
 FROM node:24-slim
 
-# Install git, jq, gh, yq, kubectl, make, procps and other common tools needed for repository operations
+# Install git, jq, gh, yq, kubectl, make, procps, gcc and other common tools needed for repository operations
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     jq \
@@ -10,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gpg \
     procps \
     make \
+    gcc \
+    libc6-dev \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -38,6 +40,9 @@ ENV PATH="${GOPATH}/bin:${PATH}"
 
 # Install Gemini CLI globally
 RUN npm install -g @google/gemini-cli
+
+# Install golangci-lint
+RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin
 
 # Build argument for workspace directory
 ARG WORKSPACE_DIR=/workspace
