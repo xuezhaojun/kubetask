@@ -1,13 +1,14 @@
 # Gemini CLI Agent Image
 FROM node:24-slim
 
-# Install git, jq, gh, yq, kubectl and other common tools needed for repository operations
+# Install git, jq, gh, yq, kubectl, procps (for pgrep) and other common tools needed for repository operations
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     jq \
     ca-certificates \
     curl \
     gpg \
+    procps \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
@@ -18,9 +19,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && chmod +x /usr/local/bin/yq \
     && curl -fsSL "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/$(dpkg --print-architecture | sed 's/aarch64/arm64/' | sed 's/x86_64/amd64/')/kubectl" -o /usr/local/bin/kubectl \
     && chmod +x /usr/local/bin/kubectl \
-    && apt-get purge -y curl gpg \
+    && apt-get purge -y gpg \
     && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+ARG GO_VERSION=1.25.5
+RUN ARCH=$(dpkg --print-architecture | sed 's/amd64/amd64/' | sed 's/arm64/arm64/') \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" -o /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz
+
+# Set Go environment
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
 
 # Install Gemini CLI globally
 RUN npm install -g @google/gemini-cli
