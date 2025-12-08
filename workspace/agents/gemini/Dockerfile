@@ -33,11 +33,6 @@ RUN ARCH=$(dpkg --print-architecture | sed 's/amd64/amd64/' | sed 's/arm64/arm64
     && tar -C /usr/local -xzf /tmp/go.tar.gz \
     && rm /tmp/go.tar.gz
 
-# Set Go environment
-ENV PATH="/usr/local/go/bin:${PATH}"
-ENV GOPATH="/go"
-ENV PATH="${GOPATH}/bin:${PATH}"
-
 # Install Gemini CLI globally
 RUN npm install -g @google/gemini-cli
 
@@ -50,6 +45,12 @@ ARG WORKSPACE_DIR=/workspace
 # Set workspace directory as environment variable for runtime use
 ENV WORKSPACE_DIR=${WORKSPACE_DIR}
 
+# Set Go environment - use workspace-relative paths to avoid permission issues
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="${WORKSPACE_DIR}/.go"
+ENV GOMODCACHE="${WORKSPACE_DIR}/.gomodcache"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
 # Create non-root user for security
 RUN useradd -m -s /bin/bash gemini
 USER gemini
@@ -59,5 +60,5 @@ WORKDIR ${WORKSPACE_DIR}
 # The agent reads the task from ${WORKSPACE_DIR}/task.md and executes it
 # Using -p flag for direct prompt input from the mounted context file
 # Using --yolo to auto-approve actions (safe in container environment)
-# Using stream-json output with jq to filter assistant messages for real-time logs
-ENTRYPOINT ["sh", "-c", "gemini --output-format stream-json --yolo -p \"$(cat ${WORKSPACE_DIR}/task.md)\" | jq -r 'select(.type == \"message\" and .role == \"assistant\") | .content'"]
+# Using stream-json output to see all logs
+ENTRYPOINT ["sh", "-c", "gemini --output-format stream-json --yolo -p \"$(cat ${WORKSPACE_DIR}/task.md)\""]
