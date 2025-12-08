@@ -157,7 +157,7 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					return ""
 				}
 				return t.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying Pod was scheduled successfully with nodeSelector")
 			// If the Pod completed successfully, the scheduling was applied correctly
@@ -244,7 +244,7 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					return ""
 				}
 				return t.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, task)).Should(Succeed())
@@ -331,7 +331,7 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					return ""
 				}
 				return br.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseCompleted))
 
 			By("Verifying all context layers are in echo output")
 			logs := getPodLogs(ctx, testNS, fmt.Sprintf("%s-task-0-job", batchRunName))
@@ -398,7 +398,7 @@ var _ = Describe("WorkspaceConfig E2E Tests", func() {
 					return ""
 				}
 				return t.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying echo agent ran successfully")
 			logs := getPodLogs(ctx, testNS, fmt.Sprintf("%s-job", taskName))

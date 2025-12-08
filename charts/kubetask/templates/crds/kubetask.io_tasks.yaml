@@ -265,7 +265,7 @@ spec:
                 enum:
                 - Pending
                 - Running
-                - Succeeded
+                - Completed
                 - Failed
                 type: string
               startTime:

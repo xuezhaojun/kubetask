@@ -147,7 +147,7 @@ var _ = Describe("BatchRun E2E Tests", func() {
 					return ""
 				}
 				return br.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseCompleted))
 
 			By("Verifying progress shows 3 completed")
 			finalBR := &kubetaskv1alpha1.BatchRun{}
@@ -246,7 +246,7 @@ var _ = Describe("BatchRun E2E Tests", func() {
 					return ""
 				}
 				return br.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseCompleted))
 
 			By("Verifying Task was created and has correct WorkspaceConfigRef")
 			taskName := fmt.Sprintf("%s-task-0", batchRunName)
@@ -325,7 +325,7 @@ var _ = Describe("BatchRun E2E Tests", func() {
 				}
 				// Accept either Running (if caught mid-execution) or Succeeded (if completed quickly)
 				return br.Status.Phase == kubetaskv1alpha1.BatchRunPhaseRunning ||
-					br.Status.Phase == kubetaskv1alpha1.BatchRunPhaseSucceeded
+					br.Status.Phase == kubetaskv1alpha1.BatchRunPhaseCompleted
 			}, timeout, interval).Should(BeTrue())
 
 			By("Verifying BatchRun eventually completes successfully")
@@ -335,7 +335,7 @@ var _ = Describe("BatchRun E2E Tests", func() {
 					return ""
 				}
 				return br.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseCompleted))
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, batchRun)).Should(Succeed())
@@ -393,7 +393,7 @@ var _ = Describe("BatchRun E2E Tests", func() {
 					return ""
 				}
 				return br.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseCompleted))
 
 			By("Verifying final progress (Completed=4)")
 			finalBR := &kubetaskv1alpha1.BatchRun{}
@@ -560,7 +560,7 @@ var _ = Describe("BatchRun E2E Tests", func() {
 					return ""
 				}
 				return br.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.BatchRunPhaseCompleted))
 
 			By("Verifying Task 0 has all contexts (1 common + 2 variable)")
 			task0Key := types.NamespacedName{Name: fmt.Sprintf("%s-task-0", batchRunName), Namespace: testNS}

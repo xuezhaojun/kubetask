@@ -53,7 +53,7 @@ func (r *BatchRunReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// 3. If completed/failed, skip
-	if batchRun.Status.Phase == kubetaskv1alpha1.BatchRunPhaseSucceeded ||
+	if batchRun.Status.Phase == kubetaskv1alpha1.BatchRunPhaseCompleted ||
 		batchRun.Status.Phase == kubetaskv1alpha1.BatchRunPhaseFailed {
 		return ctrl.Result{}, nil
 	}
@@ -268,15 +268,15 @@ func (r *BatchRunReconciler) updateTaskStatus(ctx context.Context, batchRun *kub
 
 		// Check Task completion
 		switch task.Status.Phase {
-		case kubetaskv1alpha1.TaskPhaseSucceeded:
-			batchRun.Status.Tasks[i].Status = kubetaskv1alpha1.TaskPhaseSucceeded
+		case kubetaskv1alpha1.TaskPhaseCompleted:
+			batchRun.Status.Tasks[i].Status = kubetaskv1alpha1.TaskPhaseCompleted
 			if task.Status.CompletionTime != nil {
 				batchRun.Status.Tasks[i].CompletionTime = task.Status.CompletionTime
 			}
 			batchRun.Status.Progress.Running--
 			batchRun.Status.Progress.Completed++
 			changed = true
-			log.Info("task succeeded", "task", taskName)
+			log.Info("task completed", "task", taskName)
 		case kubetaskv1alpha1.TaskPhaseFailed:
 			batchRun.Status.Tasks[i].Status = kubetaskv1alpha1.TaskPhaseFailed
 			if task.Status.CompletionTime != nil {
@@ -306,7 +306,7 @@ func (r *BatchRunReconciler) updateBatchRunStatus(ctx context.Context, batchRun 
 		if batchRun.Status.Progress.Failed > 0 {
 			batchRun.Status.Phase = kubetaskv1alpha1.BatchRunPhaseFailed
 		} else {
-			batchRun.Status.Phase = kubetaskv1alpha1.BatchRunPhaseSucceeded
+			batchRun.Status.Phase = kubetaskv1alpha1.BatchRunPhaseCompleted
 		}
 
 		return r.Status().Update(ctx, batchRun)

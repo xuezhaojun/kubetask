@@ -209,7 +209,7 @@ type BatchRunSpec struct {
 }
 
 // BatchRunPhase represents the current phase of a BatchRun
-// +kubebuilder:validation:Enum=Pending;Paused;Running;Succeeded;Failed
+// +kubebuilder:validation:Enum=Pending;Paused;Running;Completed;Failed
 type BatchRunPhase string
 
 const (
@@ -221,9 +221,12 @@ const (
 	BatchRunPhasePaused BatchRunPhase = "Paused"
 	// BatchRunPhaseRunning means the BatchRun is currently executing tasks
 	BatchRunPhaseRunning BatchRunPhase = "Running"
-	// BatchRunPhaseSucceeded means all tasks completed successfully
-	BatchRunPhaseSucceeded BatchRunPhase = "Succeeded"
-	// BatchRunPhaseFailed means one or more tasks failed
+	// BatchRunPhaseCompleted means all tasks have completed execution.
+	// This indicates the batch finished running, not necessarily that all tasks "succeeded".
+	// Individual task outcomes should be checked separately.
+	BatchRunPhaseCompleted BatchRunPhase = "Completed"
+	// BatchRunPhaseFailed means one or more tasks had infrastructure failures
+	// (e.g., Job crashed, unable to schedule, missing WorkspaceConfig).
 	BatchRunPhaseFailed BatchRunPhase = "Failed"
 )
 
@@ -285,7 +288,7 @@ type ProgressStatus struct {
 }
 
 // TaskPhase represents the current phase of a task
-// +kubebuilder:validation:Enum=Pending;Running;Succeeded;Failed
+// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
 type TaskPhase string
 
 const (
@@ -293,9 +296,12 @@ const (
 	TaskPhasePending TaskPhase = "Pending"
 	// TaskPhaseRunning means the task is currently executing
 	TaskPhaseRunning TaskPhase = "Running"
-	// TaskPhaseSucceeded means the task completed successfully
-	TaskPhaseSucceeded TaskPhase = "Succeeded"
-	// TaskPhaseFailed means the task failed
+	// TaskPhaseCompleted means the task execution finished (Job exited with code 0).
+	// This indicates the agent completed its work, not necessarily that the task "succeeded".
+	// The actual outcome should be determined by examining the agent's output.
+	TaskPhaseCompleted TaskPhase = "Completed"
+	// TaskPhaseFailed means the task had an infrastructure failure
+	// (e.g., Job crashed, unable to schedule, missing WorkspaceConfig).
 	TaskPhaseFailed TaskPhase = "Failed"
 )
 

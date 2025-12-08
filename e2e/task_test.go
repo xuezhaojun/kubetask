@@ -107,14 +107,14 @@ var _ = Describe("Task E2E Tests", func() {
 				return job.Status.Succeeded
 			}, timeout, interval).Should(Equal(int32(1)))
 
-			By("Verifying Task status is Succeeded")
+			By("Verifying Task status is Completed")
 			Eventually(func() kubetaskv1alpha1.TaskPhase {
 				createdTask := &kubetaskv1alpha1.Task{}
 				if err := k8sClient.Get(ctx, taskKey, createdTask); err != nil {
 					return ""
 				}
 				return createdTask.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying pod logs contain the task content")
 			logs := getPodLogs(ctx, testNS, jobName)
@@ -183,7 +183,7 @@ var _ = Describe("Task E2E Tests", func() {
 					return ""
 				}
 				return createdTask.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying all content parts are in the logs")
 			jobName := fmt.Sprintf("%s-job", taskName)
@@ -249,7 +249,7 @@ var _ = Describe("Task E2E Tests", func() {
 					return ""
 				}
 				return createdTask.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying ConfigMap content is in the logs")
 			jobName := fmt.Sprintf("%s-job", taskName)
@@ -325,7 +325,7 @@ var _ = Describe("Task E2E Tests", func() {
 					return ""
 				}
 				return createdTask.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying both default and task content are in the logs")
 			jobName := fmt.Sprintf("%s-job", taskName)
@@ -384,14 +384,14 @@ var _ = Describe("Task E2E Tests", func() {
 			Expect(runningTask.Status.StartTime).ShouldNot(BeNil())
 			Expect(runningTask.Status.JobName).ShouldNot(BeEmpty())
 
-			By("Verifying Task transitions to Succeeded")
+			By("Verifying Task transitions to Completed")
 			Eventually(func() kubetaskv1alpha1.TaskPhase {
 				createdTask := &kubetaskv1alpha1.Task{}
 				if err := k8sClient.Get(ctx, taskKey, createdTask); err != nil {
 					return ""
 				}
 				return createdTask.Status.Phase
-			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseSucceeded))
+			}, timeout, interval).Should(Equal(kubetaskv1alpha1.TaskPhaseCompleted))
 
 			By("Verifying CompletionTime is set")
 			completedTask := &kubetaskv1alpha1.Task{}

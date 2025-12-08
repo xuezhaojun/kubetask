@@ -65,7 +65,7 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// If completed/failed, skip
-	if task.Status.Phase == kubetaskv1alpha1.TaskPhaseSucceeded ||
+	if task.Status.Phase == kubetaskv1alpha1.TaskPhaseCompleted ||
 		task.Status.Phase == kubetaskv1alpha1.TaskPhaseFailed {
 		return ctrl.Result{}, nil
 	}
@@ -183,10 +183,10 @@ func (r *TaskReconciler) updateTaskStatusFromJob(ctx context.Context, task *kube
 
 	// Check Job completion
 	if job.Status.Succeeded > 0 {
-		task.Status.Phase = kubetaskv1alpha1.TaskPhaseSucceeded
+		task.Status.Phase = kubetaskv1alpha1.TaskPhaseCompleted
 		now := metav1.Now()
 		task.Status.CompletionTime = &now
-		log.Info("task succeeded", "job", task.Status.JobName)
+		log.Info("task completed", "job", task.Status.JobName)
 		return r.Status().Update(ctx, task)
 	} else if job.Status.Failed > 0 {
 		task.Status.Phase = kubetaskv1alpha1.TaskPhaseFailed

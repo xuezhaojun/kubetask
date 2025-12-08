@@ -431,7 +431,7 @@ spec:
                 - Pending
                 - Paused
                 - Running
-                - Succeeded
+                - Completed
                 - Failed
                 type: string
               progress:
@@ -614,7 +614,7 @@ spec:
                       enum:
                       - Pending
                       - Running
-                      - Succeeded
+                      - Completed
                       - Failed
                       type: string
                   required:
