@@ -102,7 +102,7 @@ jobs:
       - name: Build and push gemini agent
         uses: docker/build-push-action@v6
         with:
-          context: ./agents/images/gemini
+          context: ./agents/gemini
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
@@ -112,9 +112,19 @@ jobs:
       - name: Build and push echo agent
         uses: docker/build-push-action@v6
         with:
-          context: ./agents/images/echo
+          context: ./agents/echo
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.IMG_REGISTRY }}/${{ env.IMG_ORG }}/kubetask-agent-echo:latest
             ${{ env.IMG_REGISTRY }}/${{ env.IMG_ORG }}/kubetask-agent-echo:${{ github.sha }}
+
+      - name: Build and push goose agent
+        uses: docker/build-push-action@v6
+        with:
+          context: ./agents/goose
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMG_REGISTRY }}/${{ env.IMG_ORG }}/kubetask-agent-goose:latest
+            ${{ env.IMG_REGISTRY }}/${{ env.IMG_ORG }}/kubetask-agent-goose:${{ github.sha }}

@@ -9,6 +9,7 @@
    - `zhaoxue/kubetask-controller`
    - `zhaoxue/kubetask-agent-gemini`
    - `zhaoxue/kubetask-agent-echo`
+   - `zhaoxue/kubetask-agent-goose`
 
 ## 2. Add GitHub Secrets
 
