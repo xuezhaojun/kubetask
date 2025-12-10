@@ -29,8 +29,7 @@ spec:
       openAPIV3Schema:
         description: |-
           Task represents a single task execution.
-          Unlike BatchRun which manages multiple tasks, Task is for simple one-off executions.
-          Task is a simplified API for users who want to execute a single task without creating a Batch.
+          Task is the primary API for users who want to execute AI-powered tasks.
         properties:
           apiVersion:
             description: |-
@@ -65,22 +64,32 @@ spec:
                 items:
                   description: |-
                     Context represents different types of task inputs
-                    This is a polymorphic type that can represent File, API, Database, etc.
+                    This is a polymorphic type that can represent File, MCP, etc.
                   properties:
                     file:
                       description: File context (required when Type == "File")
                       properties:
+                        dirPath:
+                          description: |-
+                            DirPath is the directory path where files will be mounted in the agent pod.
+                            Use this with ConfigMapRef to mount all keys in a ConfigMap as files.
+                            Example: "/workspace/docs" - each key in the ConfigMap becomes a file.
+                            Either FilePath or DirPath must be specified, but not both.
+                          type: string
                         filePath:
                           description: |-
                             FilePath is the full path where this file will be mounted in the agent pod.
+                            Use this for single file content (with Inline or ConfigMapKeyRef source).
                             Multiple contexts with the same FilePath will be aggregated into a single file.
                             Example: "/workspace/task.md", "/workspace/config/settings.json"
+                            Either FilePath or DirPath must be specified, but not both.
                           type: string
                         source:
                           description: File content source (exactly one must be specified)
                           properties:
                             configMapKeyRef:
-                              description: Reference to a key in a ConfigMap
+                              description: Reference to a key in a ConfigMap (use
+                                with FilePath)
                               properties:
                                 key:
                                   description: Key of the ConfigMap to select from
@@ -96,95 +105,32 @@ spec:
                               - key
                               - name
                               type: object
-                            inline:
-                              description: Inline content
-                              type: string
-                            secretKeyRef:
-                              description: Reference to a key in a Secret
+                            configMapRef:
+                              description: |-
+                                Reference to an entire ConfigMap (use with DirPath)
+                                All keys in the ConfigMap will be mounted as files in the directory.
                               properties:
-                                key:
-                                  description: Key of the secret to select from
-                                  type: string
                                 name:
-                                  description: Name of the secret
+                                  description: Name of the ConfigMap
                                   type: string
                                 optional:
-                                  description: Specify whether the Secret must be
-                                    defined
+                                  description: Specify whether the ConfigMap must
+                                    be defined
                                   type: boolean
                               required:
-                              - key
                               - name
                               type: object
+                            inline:
+                              description: Inline content (use with FilePath)
+                              type: string
                           type: object
                       required:
-                      - filePath
                       - source
                       type: object
-                    remoteFile:
-                      description: RemoteFile context (required when Type == "RemoteFile")
-                      properties:
-                        filePath:
-                          description: |-
-                            FilePath is the full path where this file will be mounted in the agent pod.
-                            Multiple contexts with the same FilePath will be aggregated into a single file.
-                            Example: "/workspace/task.md", "/workspace/CLAUDE.md"
-                          type: string
-                        headers:
-                          description: |-
-                            Headers specifies optional HTTP headers to include in the request.
-                            Useful for authentication (e.g., Authorization header for private repos).
-                          items:
-                            description: HTTPHeader represents an HTTP header key-value
-                              pair
-                            properties:
-                              name:
-                                description: Name is the header name (e.g., "Authorization",
-                                  "Accept")
-                                type: string
-                              value:
-                                description: |-
-                                  Value is the header value.
-                                  For sensitive values, use ValueFrom instead.
-                                type: string
-                              valueFrom:
-                                description: ValueFrom references a secret for sensitive
-                                  header values.
-                                properties:
-                                  key:
-                                    description: Key of the secret to select from
-                                    type: string
-                                  name:
-                                    description: Name of the secret
-                                    type: string
-                                  optional:
-                                    description: Specify whether the Secret must be
-                                      defined
-                                    type: boolean
-                                required:
-                                - key
-                                - name
-                                type: object
-                            required:
-                            - name
-                            type: object
-                          type: array
-                        url:
-                          description: |-
-                            URL is the HTTP/HTTPS URL to fetch the file from.
-                            For GitHub files, use raw URLs like:
-                              https://raw.githubusercontent.com/owner/repo/branch/path/to/file
-                          type: string
-                      required:
-                      - filePath
-                      - url
-                      type: object
                     type:
-                      description: 'Type of context: File, RemoteFile, API, Database,
-                        etc.'
+                      description: 'Type of context: File, MCP, etc.'
                       enum:
                       - File
-                      - RemoteFile
                       type: string
                   required:
                   - type

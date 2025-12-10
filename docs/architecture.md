@@ -6,20 +6,19 @@
 2. [API Design](#api-design)
 3. [System Architecture](#system-architecture)
 4. [Custom Resource Definitions](#custom-resource-definitions)
-5. [Agent Template Discovery](#agent-template-discovery)
+5. [Agent Configuration](#agent-configuration)
 6. [Complete Examples](#complete-examples)
 7. [kubectl Usage](#kubectl-usage)
-8. [Migration Guide](#migration-guide)
 
 ---
 
 ## System Overview
 
-KubeTask is a Kubernetes-native system that executes AI-powered tasks across multiple repositories using Custom Resources (CRs) and the Operator pattern.
+KubeTask is a Kubernetes-native system that executes AI-powered tasks using Custom Resources (CRs) and the Operator pattern. It provides a simple, declarative way to run AI agents (like Claude, Gemini) as Kubernetes Jobs.
 
 ### Core Goals
 
-- Use Kubernetes CRDs to define Batch and Task resources
+- Use Kubernetes CRDs to define Task resources
 - Use Controller pattern to manage resource lifecycle
 - Execute tasks as Kubernetes Jobs
 - No external databases or message queues required
@@ -27,86 +26,58 @@ KubeTask is a Kubernetes-native system that executes AI-powered tasks across mul
 
 ### Key Advantages
 
-✅ **Simplified Architecture**: No PostgreSQL, Redis - reduced component dependencies
-✅ **Native Integration**: Works seamlessly with Tekton, Argo, Flux and other K8s tools
-✅ **Declarative Management**: Use K8s resource definitions, supports GitOps
-✅ **Infrastructure Reuse**: Logs, monitoring, auth/authz all leverage K8s capabilities
-✅ **Simplified Operations**: Manage with standard K8s tools (kubectl, dashboard)
+- **Simplified Architecture**: No PostgreSQL, Redis - reduced component dependencies
+- **Native Integration**: Works seamlessly with Helm, Kustomize, ArgoCD and other K8s tools
+- **Declarative Management**: Use K8s resource definitions, supports GitOps
+- **Infrastructure Reuse**: Logs, monitoring, auth/authz all leverage K8s capabilities
+- **Simplified Operations**: Manage with standard K8s tools (kubectl, dashboard)
+- **Batch Operations**: Use Helm/Kustomize to create multiple Tasks (Kubernetes-native approach)
 
 ---
 
 ## API Design
 
-### Complete Resource Overview
+### Resource Overview
 
 | Resource | Purpose | Stability |
 |----------|---------|-----------|
-| **Batch** | Task batch template (WHAT + WHERE) | Stable - semantic name |
-| **BatchRun** | Batch execution instance | Stable - follows Batch |
-| **Task** | Single task execution (simplified API) | Stable - semantic name |
-| **Agent** | Workspace environment config (HOW) | **Stable - independent of project name** |
+| **Task** | Single task execution (primary API) | Stable - semantic name |
+| **Agent** | AI agent configuration (HOW to execute) | Stable - independent of project name |
 
 ### Key Design Decisions
 
-#### 1. Batch (not Bundle)
+#### 1. Task as Primary API
 
-**Rationale**: "Batch" better expresses batch processing concept and aligns with K8s `batch/v1`.
+**Rationale**: Simple, focused API for single task execution. For batch operations, use Helm/Kustomize to create multiple Tasks.
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
-kind: Batch
+kind: Task
 ```
 
 #### 2. Agent (not KubeTaskConfig)
 
 **Rationale**:
-- ✅ **Stable**: Independent of project name - won't change even if project renames
-- ✅ **Semantic**: Reflects architecture philosophy: "Workspace = AI + permissions + tools"
-- ✅ **Clear**: Configures the workspace environment for task execution
+- **Stable**: Independent of project name - won't change even if project renames
+- **Semantic**: Reflects architecture philosophy: "Agent = AI + permissions + tools"
+- **Clear**: Configures the agent environment for task execution
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
 kind: Agent
 ```
 
-#### 3. AgentImage (simplified from AgentTemplateRef)
+#### 3. No Batch/BatchRun
 
-**Rationale**: Simpler API - users only need to specify the agent container image, not a full Job template.
-
-```yaml
-spec:
-  agentImage: quay.io/zhaoxue/kubetask-agent:latest
-```
-
-#### 4. variableContexts (not targets/variants/contextSets)
-
-**Rationale**: Highlights constant/variable dichotomy perfectly.
-
-```yaml
-spec:
-  commonContext: [...]      # Constant
-  variableContexts: [...]   # Variable
-```
+**Rationale**: Kubernetes-native approach - use Helm, Kustomize, or other templating tools to create multiple Tasks. This:
+- Reduces API complexity
+- Leverages existing Kubernetes tooling
+- Follows cloud-native best practices
 
 ### Resource Hierarchy
 
 ```
-Batch (template)
-├── BatchSpec
-│   ├── commonContext: []Context
-│   ├── variableContexts: [][]Context
-│   └── agentRef: string
-│
-BatchRun (execution)
-├── BatchRunSpec
-│   ├── batchRef: string
-│   └── batchSpec: *BatchSpec (inline, includes agentRef)
-└── BatchRunStatus
-    ├── phase: BatchRunPhase
-    ├── progress: ProgressStatus
-    └── tasks: []TaskStatus
-
-Task (single task)
+Task (single task execution)
 ├── TaskSpec
 │   ├── contexts: []Context
 │   └── agentRef: string
@@ -116,42 +87,28 @@ Task (single task)
     ├── startTime: Time
     └── completionTime: Time
 
-Agent (environment)
+Agent (execution configuration)
 └── AgentSpec
-    └── agentImage: string
+    ├── agentImage: string
+    ├── toolsImage: string
+    ├── defaultContexts: []Context
+    ├── credentials: []Credential
+    ├── podLabels: map[string]string
+    ├── scheduling: *PodScheduling
+    └── serviceAccountName: string
 ```
 
 ### Complete Type Definitions
 
 ```go
-// Core resources
-type Batch struct {
-    Spec BatchSpec
-}
-
-type BatchSpec struct {
-    CommonContext      []Context
-    VariableContexts   [][]Context
-    AgentRef string  // Reference to Agent
-}
-
-type BatchRun struct {
-    Spec   BatchRunSpec
-    Status BatchRunStatus
-}
-
-type BatchRunSpec struct {
-    BatchRef  string
-    BatchSpec *BatchSpec  // Inline batch (includes AgentRef)
-}
-
+// Task represents a single task execution
 type Task struct {
     Spec   TaskSpec
     Status TaskExecutionStatus
 }
 
 type TaskSpec struct {
-    Contexts           []Context
+    Contexts []Context
     AgentRef string  // Reference to Agent
 }
 
@@ -160,28 +117,46 @@ type TaskExecutionStatus struct {
     JobName        string
     StartTime      *metav1.Time
     CompletionTime *metav1.Time
+    Conditions     []metav1.Condition
 }
 
+// Agent defines the AI agent configuration
 type Agent struct {
     Spec AgentSpec
 }
 
 type AgentSpec struct {
-    AgentImage string  // Container image for the agent
+    AgentImage         string
+    ToolsImage         string
+    DefaultContexts    []Context
+    Credentials        []Credential
+    PodLabels          map[string]string
+    Scheduling         *PodScheduling
+    ServiceAccountName string
 }
 
 // Context system
 type Context struct {
-    Type       ContextType
-    File       *FileContext
-    Repository *RepositoryContext
+    Type ContextType
+    File *FileContext
 }
 
 type ContextType string
 const (
-    ContextTypeFile       ContextType = "File"
-    ContextTypeRepository ContextType = "Repository"
+    ContextTypeFile ContextType = "File"
 )
+
+type FileContext struct {
+    FilePath string  // For single file
+    DirPath  string  // For directory (with ConfigMapRef)
+    Source   FileSource
+}
+
+type FileSource struct {
+    Inline          *string
+    ConfigMapKeyRef *ConfigMapKeySelector
+    ConfigMapRef    *ConfigMapReference  // For directory mount
+}
 ```
 
 ---
@@ -201,7 +176,7 @@ const (
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              KubeTask Controller (Operator)                 │
-│  - Watch Batch & BatchRun CRs                              │
+│  - Watch Task CRs                                           │
 │  - Reconcile loop                                           │
 │  - Create Kubernetes Jobs for tasks                         │
 │  - Update CR status fields                                  │
@@ -211,11 +186,10 @@ const (
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   Kubernetes Jobs/Pods                      │
-│  - Each task runs as a separate Job/Pod                    │
-│  - Execute task using agent scripts                         │
-│  - Git worktree management                                  │
+│  - Each task runs as a separate Job/Pod                     │
+│  - Execute task using agent container                       │
 │  - AI agent invocation                                      │
-│  - Update parent CR status                                  │
+│  - Context files mounted as volumes                         │
 └─────────────────────────────────────────────────────────────┘
                           │
                           ▼
@@ -223,14 +197,14 @@ const (
 │                      Storage Layer                          │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │ etcd (Kubernetes Backend)                            │   │
-│  │  - Batch CRs                                         │   │
-│  │  - BatchRun CRs                                      │   │
+│  │  - Task CRs                                          │   │
+│  │  - Agent CRs                                         │   │
 │  │  - CR status (execution state, results)              │   │
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │ PersistentVolume (PVC)                               │   │
-│  │  - /workspace (bare repos)                           │   │
-│  │  - Pod logs (managed by Kubernetes)                  │   │
+│  │ ConfigMaps                                           │   │
+│  │  - Task context files                                │   │
+│  │  - Configuration data                                │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -239,240 +213,9 @@ const (
 
 ## Custom Resource Definitions
 
-### Design Principles
+### Task (Primary API)
 
-KubeTask follows **separation of concerns**:
-
-- **Batch**: Defines task content (WHAT) and repository scope (WHERE)
-- **Agent**: Defines execution config (HOW) - Agent template reference
-- **BatchRun**: Execution instance, can override Agent settings
-
-**Benefits**:
-1. **Simple Batch**: Only focuses on task definition, easy to create and maintain
-2. **Centralized Config**: All execution config managed in Agent
-3. **Flexible Override**: BatchRun can override default config as needed
-4. **Stability**: Agent name independent of project name, won't change if project renames
-
-### Batch (Task Definition)
-
-Batch defines the content and targets of batch processing tasks.
-
-```yaml
-apiVersion: kubetask.io/v1alpha1
-kind: Batch
-metadata:
-  name: update-dependencies
-  namespace: kubetask-system
-spec:
-  # Common context - shared by all tasks
-  commonContext:
-    - type: File
-      file:
-        name: task.md
-        source:
-          inline: |
-            Update dependencies to latest versions.
-            Run tests and create PR.
-
-    - type: File
-      file:
-        name: guide.md
-        source:
-          configMapKeyRef:
-            name: workflow-guides
-            key: standard-pr-workflow.md
-
-  # Variable context - different per task
-  variableContexts:
-    # Task 1: service-a + its config
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: service-a
-          branch: main
-
-      - type: File
-        file:
-          name: config.json
-          source:
-            configMapKeyRef:
-              name: dep-configs
-              key: service-a.json
-
-    # Task 2: service-b + its config + credentials
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: service-b
-          branch: main
-
-      - type: File
-        file:
-          name: config.json
-          source:
-            configMapKeyRef:
-              name: dep-configs
-              key: service-b.json
-
-      - type: File
-        file:
-          name: credentials.json
-          source:
-            secretKeyRef:
-              name: private-credentials
-              key: service-b-creds.json
-
-    # Task 3: service-c on develop branch
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: service-c
-          branch: develop
-
-      - type: File
-        file:
-          name: config.json
-          source:
-            configMapKeyRef:
-              name: dep-configs
-              key: service-c.json
-```
-
-**Field Description:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `spec.commonContext` | []Context | Yes | Common context, shared by all tasks |
-| `spec.variableContexts` | [][]Context | Yes | Variable context, each element generates one task |
-| `spec.agentRef` | String | No | Reference to Agent (default: "default") |
-
-**Task Generation Formula:**
-
-```
-Task[i] = commonContext + variableContexts[i]
-Total Tasks = len(variableContexts)
-```
-
-**Example:**
-```
-commonContext = [task.md, guide.md]
-variableContexts = [
-  [service-a:main, service-a.json],
-  [service-b:main, service-b.json, creds.json],
-  [service-c:develop, service-c.json]
-]
-
-Generated Tasks:
-Task 1 = [task.md, guide.md, service-a:main, service-a.json]
-Task 2 = [task.md, guide.md, service-b:main, service-b.json, creds.json]
-Task 3 = [task.md, guide.md, service-c:develop, service-c.json]
-
-Total: 3 tasks
-```
-
-**Context Types:**
-
-1. **File Context**:
-```yaml
-type: File
-file:
-  name: task.md
-  source:
-    inline: "Task description"
-    # OR
-    configMapKeyRef:
-      name: configs
-      key: task.md
-    # OR
-    secretKeyRef:
-      name: secrets
-      key: credentials.json
-```
-
-2. **Repository Context**:
-```yaml
-type: Repository
-repository:
-  org: myorg
-  repo: service-a
-  branch: main
-```
-
-### BatchRun (Execution Instance)
-
-BatchRun is a concrete execution instance of a Batch. Each execution creates a new Run.
-
-```yaml
-apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
-metadata:
-  name: update-dependencies-run-001
-  namespace: kubetask-system
-  labels:
-    team: platform
-    jira: PROJ-1234
-spec:
-  # Method 1: Reference existing Batch (recommended)
-  batchRef: update-dependencies
-
-  # Method 2: Inline Batch definition (optional, choose one)
-  # batchSpec:
-  #   commonContext: [...]
-  #   variableContexts: [...]
-
-status:
-  # Execution phase (BatchRunPhase enum)
-  phase: Running  # Pending|Running|Succeeded|Failed
-
-  # Start and end times
-  startTime: "2025-01-18T10:00:00Z"
-  completionTime: "2025-01-18T10:15:00Z"
-
-  # Progress statistics
-  progress:
-    total: 2
-    pending: 0
-    running: 1
-    completed: 1
-    failed: 0
-
-  # Task list
-  tasks:
-    - contexts:
-        - type: Repository
-          repository:
-            org: myorg
-            repo: service-a
-            branch: main
-      status: Succeeded  # TaskPhase enum: Pending|Running|Succeeded|Failed
-      jobName: update-dependencies-run-001-task-0
-      startTime: "2025-01-18T10:01:00Z"
-      completionTime: "2025-01-18T10:05:00Z"
-
-    - contexts:
-        - type: Repository
-          repository:
-            org: myorg
-            repo: service-b
-            branch: main
-      status: Running
-      jobName: update-dependencies-run-001-task-1
-      startTime: "2025-01-18T10:02:00Z"
-```
-
-**Status Field Description:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `status.phase` | BatchRunPhase | Execution phase: Pending\|Running\|Succeeded\|Failed |
-| `status.startTime` | Timestamp | Start time |
-| `status.completionTime` | Timestamp | End time |
-| `status.progress` | Object | Progress statistics |
-| `status.tasks` | []TaskStatus | Task details list |
-
-### Task (Single Task Execution)
-
-Task is a simplified API for users who want to execute a single task without creating a Batch. Unlike BatchRun which manages multiple tasks, Task is for simple one-off executions.
+Task is the primary API for executing AI-powered tasks.
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -480,49 +223,41 @@ kind: Task
 metadata:
   name: update-service-a
   namespace: kubetask-system
-  labels:
-    team: platform
 spec:
   # Contexts defines what this task operates on
-  # This is a simple list of contexts (no common/variable separation)
   contexts:
-    # File context - task description
+    # File context - task description (inline)
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Update dependencies to latest versions.
             Run tests and create PR.
 
-    # File context - workflow guide
+    # File context - from ConfigMap key
     - type: File
       file:
-        name: guide.md
+        filePath: /workspace/guide.md
         source:
           configMapKeyRef:
             name: workflow-guides
             key: standard-pr-workflow.md
 
-    # Repository context
-    - type: Repository
-      repository:
-        org: myorg
-        repo: service-a
-        branch: main
-
-    # Config file from ConfigMap
+    # Directory context - mount entire ConfigMap as directory
     - type: File
       file:
-        name: config.json
+        dirPath: /workspace/configs
         source:
-          configMapKeyRef:
-            name: dep-configs
-            key: service-a.json
+          configMapRef:
+            name: my-configs  # All keys become files
+
+  # Optional: Reference to Agent (defaults to "default")
+  agentRef: my-agent
 
 status:
-  # Execution phase (TaskPhase enum)
-  phase: Running  # Pending|Running|Succeeded|Failed
+  # Execution phase
+  phase: Running  # Pending|Running|Completed|Failed
 
   # Kubernetes Job name
   jobName: update-service-a-xyz123
@@ -536,55 +271,46 @@ status:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `spec.contexts` | []Context | Yes | List of contexts (files, repositories, etc.) |
+| `spec.contexts` | []Context | Yes | List of contexts (files) |
+| `spec.agentRef` | String | No | Reference to Agent (default: "default") |
 
 **Status Field Description:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status.phase` | TaskPhase | Execution phase: Pending\|Running\|Succeeded\|Failed |
+| `status.phase` | TaskPhase | Execution phase: Pending\|Running\|Completed\|Failed |
 | `status.jobName` | String | Kubernetes Job name |
 | `status.startTime` | Timestamp | Start time |
 | `status.completionTime` | Timestamp | End time |
 
-**When to Use Task vs Batch:**
+**Context Types:**
 
-- **Use Task**: For simple one-off executions on a single repository
-- **Use Batch + BatchRun**: For executing the same task across multiple repositories
-
-**Example Comparison:**
-
+1. **File Context (single file)**:
 ```yaml
-# Using Task (simple, single execution)
-apiVersion: kubetask.io/v1alpha1
-kind: Task
-metadata:
-  name: update-service-a
-spec:
-  contexts:
-    - type: File
-      file: {name: task.md, source: {inline: "Update deps"}}
-    - type: Repository
-      repository: {org: myorg, repo: service-a, branch: main}
+type: File
+file:
+  filePath: /workspace/task.md
+  source:
+    inline: "Task description"
+    # OR
+    configMapKeyRef:
+      name: configs
+      key: task.md
+```
 
-# Using Batch (template for multiple executions)
-apiVersion: kubetask.io/v1alpha1
-kind: Batch
-metadata:
-  name: update-dependencies
-spec:
-  commonContext:
-    - type: File
-      file: {name: task.md, source: {inline: "Update deps"}}
-  variableContexts:
-    - [{type: Repository, repository: {org: myorg, repo: service-a, branch: main}}]
-    - [{type: Repository, repository: {org: myorg, repo: service-b, branch: main}}]
-    - [{type: Repository, repository: {org: myorg, repo: service-c, branch: main}}]
+2. **File Context (directory)**:
+```yaml
+type: File
+file:
+  dirPath: /workspace/configs
+  source:
+    configMapRef:
+      name: my-configs  # All keys become files in directory
 ```
 
 ### Agent (Execution Configuration)
 
-Agent defines the agent container image for task execution. The controller generates Jobs using this image.
+Agent defines the AI agent configuration for task execution.
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -594,38 +320,76 @@ metadata:
   namespace: kubetask-system
 spec:
   # Agent container image
-  # If not specified, defaults to "quay.io/zhaoxue/kubetask-agent:latest"
-  agentImage: quay.io/myorg/custom-agent:v1.0
+  agentImage: quay.io/myorg/claude-agent:v1.0
+
+  # Optional: Tools image (provides CLI tools like git, gh, kubectl)
+  toolsImage: quay.io/myorg/tools:v1.0
+
+  # Optional: Default contexts for all tasks using this agent
+  defaultContexts:
+    - type: File
+      file:
+        filePath: /workspace/org-guidelines.md
+        source:
+          configMapKeyRef:
+            name: org-configs
+            key: guidelines.md
+
+  # Optional: Credentials (secrets as env vars or file mounts)
+  credentials:
+    - name: github-token
+      secretRef:
+        name: github-creds
+        key: token
+      env: GITHUB_TOKEN
+
+    - name: ssh-key
+      secretRef:
+        name: ssh-keys
+        key: id_rsa
+      mountPath: /home/agent/.ssh/id_rsa
+      fileMode: 0400
+
+  # Optional: Pod labels for NetworkPolicy, monitoring, etc.
+  podLabels:
+    network-policy: agent-restricted
+
+  # Optional: Scheduling constraints
+  scheduling:
+    nodeSelector:
+      kubernetes.io/os: linux
+    tolerations:
+      - key: "dedicated"
+        operator: "Equal"
+        value: "ai-workload"
+        effect: "NoSchedule"
+
+  # Required: ServiceAccount for agent pods
+  serviceAccountName: kubetask-agent
 ```
 
 **Field Description:**
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `spec.agentImage` | String | No | Agent container image (default: "quay.io/zhaoxue/kubetask-agent:latest") |
-
-**Design Points:**
-- Simplified API: Only specify the agent image, controller handles Job creation
-- Controller generates Jobs with consistent structure (env vars, labels, owner references)
-- Name independent of project name, won't change if project renames
-- Tasks and BatchRuns reference Agent via `agentRef` field
+| `spec.agentImage` | String | No | Agent container image |
+| `spec.toolsImage` | String | No | Tools image (git, gh, kubectl, etc.) |
+| `spec.defaultContexts` | []Context | No | Default contexts for all tasks |
+| `spec.credentials` | []Credential | No | Secrets as env vars or file mounts |
+| `spec.podLabels` | map[string]string | No | Additional pod labels |
+| `spec.scheduling` | *PodScheduling | No | Node selector, tolerations, affinity |
+| `spec.serviceAccountName` | String | Yes | ServiceAccount for agent pods |
 
 ---
 
-## Agent Image Discovery
+## Agent Configuration
 
-### Design Philosophy
-
-**Core Idea**: KubeTask controller generates Jobs internally, users only need to specify the agent container image.
-
-**User Philosophy**: Work is not produced by people (AI agents) alone, but by **workspace environments**. Workspace = AI intelligence + permissions + tools.
-
-### Discovery Priority
+### Agent Image Discovery
 
 Controller determines the agent image in this priority order:
 
 1. **Agent.spec.agentImage** (from referenced Agent)
-2. **Built-in default** (fallback) - `quay.io/zhaoxue/kubetask-agent:latest`
+2. **Built-in default** (fallback) - `quay.io/zhaoxue/kubetask-agent-gemini:latest`
 
 ### How It Works
 
@@ -633,274 +397,134 @@ The controller:
 1. Looks up the Agent referenced by `agentRef` (defaults to "default")
 2. Uses the `agentImage` from Agent if specified
 3. Falls back to built-in default image if no Agent or agentImage found
-4. Generates a Job with consistent structure including:
+4. Generates a Job with:
    - Labels for tracking (`kubetask.io/task`)
    - Environment variables (`TASK_NAME`, `TASK_NAMESPACE`)
    - Owner references for garbage collection
-   - ServiceAccount `kubetask-agent`
+   - ServiceAccount from Agent spec
 
-### Usage Scenarios
+### Context Priority
 
-#### Scenario 1: Standard Usage (90% of cases)
+When a Task references an Agent with `defaultContexts`, contexts are merged:
 
-**User Operations**:
-```bash
-# 1. Create namespace and workspace resources
-kubectl create namespace team-platform
-kubectl apply -f workspace-setup.yaml  # PVC, Secrets, ServiceAccount
-
-# 2. Create default Agent (optional - uses built-in default if not created)
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Agent
-metadata:
-  name: default
-  namespace: team-platform
-spec:
-  agentImage: quay.io/myorg/claude-agent:v1.0
-EOF
-
-# 3. Create and run Task (uses "default" Agent automatically)
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Task
-metadata:
-  name: update-service-a
-  namespace: team-platform
-spec:
-  contexts:
-    - type: File
-      file:
-        name: task.md
-        source:
-          inline: "Update dependencies"
-    - type: Repository
-      repository:
-        org: myorg
-        repo: service-a
-        branch: main
-EOF
-```
-
-#### Scenario 2: Multiple Workspace Configurations
-
-**User Operations**:
-```bash
-# 1. Create different Agents for different AI agents
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Agent
-metadata:
-  name: claude-workspace
-  namespace: team-platform
-spec:
-  agentImage: quay.io/myorg/claude-agent:v1.0
----
-apiVersion: kubetask.io/v1alpha1
-kind: Agent
-metadata:
-  name: gemini-workspace
-  namespace: team-platform
-spec:
-  agentImage: quay.io/myorg/gemini-agent:v1.0
-EOF
-
-# 2. Task using Claude
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Task
-metadata:
-  name: task-with-claude
-  namespace: team-platform
-spec:
-  agentRef: claude-workspace
-  contexts:
-    - type: Repository
-      repository: {org: myorg, repo: service-a, branch: main}
-EOF
-
-# 3. Task using Gemini
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Task
-metadata:
-  name: task-with-gemini
-  namespace: team-platform
-spec:
-  agentRef: gemini-workspace
-  contexts:
-    - type: Repository
-      repository: {org: myorg, repo: service-b, branch: main}
-EOF
-```
-
-#### Scenario 3: Batch with Custom Workspace
-
-```bash
-# Create Batch with specific Agent
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Batch
-metadata:
-  name: update-with-gemini
-  namespace: team-platform
-spec:
-  agentRef: gemini-workspace  # Use Gemini for this batch
-  commonContext:
-    - type: File
-      file:
-        name: task.md
-        source:
-          inline: "Update dependencies"
-  variableContexts:
-    - [{type: Repository, repository: {org: myorg, repo: service-a, branch: main}}]
----
-apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
-metadata:
-  name: update-deps-001
-  namespace: team-platform
-spec:
-  batchRef: update-with-gemini
-EOF
-```
-
-### Advantages
-
-✅ **Simple**: Users only specify an image, no need to understand Job template structure
-✅ **Consistent**: Controller generates Jobs with consistent labels, env vars, and owner references
-✅ **Flexible**: Different Agents for different AI agents
-✅ **Good Performance**: Direct Get() call for Agent lookup
-✅ **Clear**: Simple error messages when Agent not found
-✅ **Stability**: Agent name independent of project name
+1. **Agent.defaultContexts** (base layer, lowest priority)
+2. **Task.contexts** (task-specific, highest priority)
 
 ---
 
 ## Complete Examples
 
-### 1. Define Workspace (Environment)
+### 1. Simple Task Execution
 
 ```yaml
+# Create Agent
 apiVersion: kubetask.io/v1alpha1
 kind: Agent
 metadata:
-  name: default  # Convention: "default" is used when no agentRef is specified
+  name: default
   namespace: kubetask-system
 spec:
   agentImage: quay.io/myorg/claude-agent:v1.0
-```
-
-### 2. Define Batch (What to do)
-
-```yaml
+  serviceAccountName: kubetask-agent
+---
+# Create Task
 apiVersion: kubetask.io/v1alpha1
-kind: Batch
+kind: Task
 metadata:
-  name: update-dependencies
+  name: update-service-a
   namespace: kubetask-system
 spec:
-  # Constant - shared by all tasks
-  commonContext:
+  contexts:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Update dependencies to latest versions.
             Run tests and create PR.
-
-    - type: File
-      file:
-        name: guide.md
-        source:
-          configMapKeyRef:
-            name: workflow-guides
-            key: standard-pr-workflow.md
-
-  # Variable - different per task
-  variableContexts:
-    # Task 1: service-a + config
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: service-a
-          branch: main
-
-      - type: File
-        file:
-          name: config.json
-          source:
-            configMapKeyRef:
-              name: dep-configs
-              key: service-a.json
-
-    # Task 2: service-b + config + credentials
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: service-b
-          branch: main
-
-      - type: File
-        file:
-          name: config.json
-          source:
-            configMapKeyRef:
-              name: dep-configs
-              key: service-b.json
-
-      - type: File
-        file:
-          name: credentials.json
-          source:
-            secretKeyRef:
-              name: private-credentials
-              key: service-b-creds.json
 ```
 
-### 3. Execute Batch
+### 2. Task with Multiple Context Sources
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
+kind: Task
 metadata:
-  name: update-dependencies-run-001
+  name: complex-task
   namespace: kubetask-system
-  labels:
-    team: platform
-    jira: PROJ-1234
 spec:
-  # Reference Batch (inherits agentRef from Batch)
-  batchRef: update-dependencies
+  agentRef: claude-workspace
+  contexts:
+    # Inline task description
+    - type: File
+      file:
+        filePath: /workspace/task.md
+        source:
+          inline: "Refactor the authentication module"
+
+    # Guide from ConfigMap
+    - type: File
+      file:
+        filePath: /workspace/guide.md
+        source:
+          configMapKeyRef:
+            name: guides
+            key: refactoring-guide.md
+
+    # Multiple config files as directory
+    - type: File
+      file:
+        dirPath: /workspace/configs
+        source:
+          configMapRef:
+            name: project-configs
+```
+
+### 3. Batch Operations with Helm
+
+For running the same task across multiple targets, use Helm templating:
+
+```yaml
+# values.yaml
+tasks:
+  - name: update-service-a
+    repo: service-a
+  - name: update-service-b
+    repo: service-b
+  - name: update-service-c
+    repo: service-c
+
+# templates/tasks.yaml
+{{- range .Values.tasks }}
+---
+apiVersion: kubetask.io/v1alpha1
+kind: Task
+metadata:
+  name: {{ .name }}
+spec:
+  contexts:
+    - type: File
+      file:
+        filePath: /workspace/task.md
+        source:
+          inline: "Update dependencies for {{ .repo }}"
+{{- end }}
+```
+
+```bash
+# Generate and apply multiple tasks
+helm template my-tasks ./chart | kubectl apply -f -
 ```
 
 ---
 
 ## kubectl Usage
 
-### Single Task Operations
+### Task Operations
 
 ```bash
-# Create and run a single task
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: Task
-metadata:
-  name: update-service-a
-  namespace: kubetask-system
-spec:
-  contexts:
-    - type: File
-      file:
-        name: task.md
-        source:
-          inline: "Update dependencies and create PR"
-    - type: Repository
-      repository:
-        org: myorg
-        repo: service-a
-        branch: main
-EOF
+# Create a task
+kubectl apply -f task.yaml
 
 # List tasks
 kubectl get tasks -n kubetask-system
@@ -912,194 +536,79 @@ kubectl get task update-service-a -n kubetask-system -w
 kubectl get task update-service-a -o yaml
 
 # View task logs
-kubectl logs job/$(kubectl get task update-service-a -n kubetask-system -o jsonpath='{.status.jobName}') -n kubetask-system
+kubectl logs job/$(kubectl get task update-service-a -o jsonpath='{.status.jobName}') -n kubetask-system
 
-# Delete completed task
+# Delete task
 kubectl delete task update-service-a -n kubetask-system
 ```
 
-### Batch Operations
+### Agent Operations
 
 ```bash
-# List batches
-kubectl get batches -n kubetask-system
-
-# Create a batch
-kubectl apply -f my-batch.yaml
-
-# Run a batch
-kubectl apply -f - <<EOF
-apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
-metadata:
-  generateName: update-deps-
-  namespace: kubetask-system
-spec:
-  batchRef: update-dependencies
-EOF
-
-# Watch batch execution
-kubectl get batchrun -n kubetask-system -w
-
-# Check batch run status
-kubectl get batchrun update-deps-abc123 -o yaml
-
-# View logs for a specific task in batch
-kubectl logs job/update-deps-abc123-task-0 -n kubetask-system
-
-# List all batch runs
-kubectl get batchruns -n kubetask-system
-```
-
-### Workspace Configuration
-
-```bash
-# List workspace configs
+# List agents
 kubectl get agents -n kubetask-system
 
-# Create workspace config
-kubectl apply -f workspace-config.yaml
+# Create agent
+kubectl apply -f agent.yaml
 
-# View workspace config details
-kubectl get agent default-workspace -o yaml
+# View agent details
+kubectl get agent default -o yaml
 ```
 
 ---
 
-## Naming Stability Analysis
+## Benefits of Design
 
-### Stable Names (Won't Change)
+### 1. Simplicity
 
-| Name | Reason |
-|------|--------|
-| **Agent** | Independent of project name; semantic concept |
-| **AgentTemplateRef** | Semantic concept; describes what it is |
-| **commonContext** | Programming concept; universal |
-| **variableContexts** | Programming concept; universal |
-| **Context** | Universal abstraction |
-
-### Project-Dependent Names (May Change)
-
-| Name | Current | If Project Renames |
-|------|---------|-------------------|
-| Namespace | `kubetask-system` | Would change |
-| ConfigMap | `kubetask-agent` | Would change |
-| Labels | `kubetask.io/*` | Would change |
-
-**Mitigation**: Use convention-based discovery. Agent doesn't hardcode names.
-
----
-
-## Migration Guide
-
-### Migration from CodeSweep
-
-#### Resource Mapping
-
-| Old (CodeSweep) | New (KubeTask) |
-|----------------|----------------|
-| `Bundle` | `Batch` |
-| `BundleRun` | `BatchRun` |
-| `CodeSweepConfig` | `Agent` |
-| `bundles.codesweep.io` | `batches.kubetask.io` |
-| `bundleruns.codesweep.io` | `batchruns.kubetask.io` |
-| `codesweepconfigs.codesweep.io` | `agents.kubetask.io` |
-
-#### Field Mapping
-
-| Old | New |
-|-----|-----|
-| `spec.repositories` | `spec.variableContexts` (with type: Repository) |
-| `spec.context.files` | `spec.commonContext` (with type: File) |
-| `spec.bundleRef` | `spec.batchRef` |
-| `spec.jobTemplateRef` | `spec.agentRef` |
-
----
-
-## Convention-Based Discovery
-
-**Agent image discovery order:**
-
-1. **Agent.spec.agentImage** (from referenced Agent)
-2. **Built-in default** (fallback: `quay.io/zhaoxue/kubetask-agent:latest`)
-
-**Agent lookup:**
-- Task/Batch uses `agentRef` field to reference a Agent
-- If not specified, uses Agent named "default" in the same namespace
-- If "default" doesn't exist, uses built-in default image
-
-This allows:
-- ✅ Explicit Agent per Batch/Task
-- ✅ Convention-based default ("default" Agent)
-- ✅ Fallback for new users (built-in default image)
-
----
-
-## Benefits of Final Design
-
-### 1. Semantic Clarity
-
-- **Batch**: Clearly batch processing
-- **Agent**: Clearly environment config
-- **AgentImage**: Simple container image reference
-- **commonContext/variableContexts**: Clearly constant/variable
+- **Two CRDs only**: Task and Agent
+- **Clear separation**: WHAT (Task) vs HOW (Agent)
+- **Kubernetes-native batch**: Use Helm/Kustomize for multiple Tasks
 
 ### 2. Stability
 
 - **Agent**: Won't change even if project renames
-- **AgentImage**: Simple, semantic field
 - **Core concepts**: Independent of project name
 
 ### 3. Flexibility
 
-- Multiple context types (File, Repository, future: API, Database)
-- Each task can have different contexts
-- Easy to extend
+- Multiple context types (File, future: MCP)
+- Directory mounts with ConfigMapRef
+- Tools image for CLI tools
 
 ### 4. K8s Alignment
 
-- **Batch**: Aligns with `batch/v1`
 - **Agent**: Follows K8s Config pattern
-- Convention-based discovery: K8s standard practice
+- **Convention-based discovery**: K8s standard practice
+- **Batch via Helm/Kustomize**: Cloud-native approach
 
 ---
 
 ## Summary
 
-**Final API**:
-- ✅ **Batch** + **BatchRun** - semantic batch processing
-- ✅ **Task** - simplified single task execution
-- ✅ **Agent** - stable, project-independent
-- ✅ **AgentImage** - simple container image configuration
-- ✅ **commonContext** + **variableContexts** - clear constant/variable model
-- ✅ **agentRef** - reference to Agent from Batch/Task
-- ✅ **Context** abstraction - flexible, extensible
+**API**:
+- **Task** - primary API for single task execution
+- **Agent** - stable, project-independent configuration
 
-**Philosophy**:
-- **Stability**: Core concepts independent of project name
-- **Semantics**: Names reflect what things are, not project branding
-- **Flexibility**: Extensible context system
-- **Alignment**: Follows K8s patterns and conventions
+**Context Types**:
+- `FilePath` + `Inline` - single file with inline content
+- `FilePath` + `ConfigMapKeyRef` - single file from ConfigMap key
+- `DirPath` + `ConfigMapRef` - directory with all ConfigMap keys as files
+
+**Batch Operations**:
+- Use Helm, Kustomize, or other templating tools
+- Kubernetes-native approach
 
 **Advantages**:
-- ✅ **Simplified Architecture**: No external dependencies
-- ✅ **Native Integration**: Works with K8s ecosystem
-- ✅ **Declarative Management**: GitOps ready
-- ✅ **Infrastructure Reuse**: Leverage K8s capabilities
-- ✅ **Simplified Operations**: Standard K8s tools
+- Simplified Architecture
+- Native Integration with K8s tools
+- Declarative Management (GitOps ready)
+- Infrastructure Reuse
+- Simplified Operations
 
 ---
 
-## Related Documentation
-
-- **[ADR 0003: Use Kubernetes-Native Architecture](adr/0003-kubernetes-native-architecture.md)** - Architecture decision record
-- **[ADR 0005: Task Abstraction and Context System](adr/0005-task-abstraction-and-context-system.md)** - Task abstraction and context system
-- **[FINAL-NAMING-DECISIONS.md](FINAL-NAMING-DECISIONS.md)** - Naming decision records
-
----
-
-**Status**: ✅ FINAL
-**Date**: 2025-12-01
-**Version**: v2.0
-**Approved**: @zxue
+**Status**: FINAL
+**Date**: 2025-12-10
+**Version**: v3.0
 **Maintainer**: KubeTask Team

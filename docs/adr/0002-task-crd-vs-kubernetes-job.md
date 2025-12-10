@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted (Updated 2025-12-10)
 
 ## Context
 
@@ -68,16 +68,19 @@ spec:
           configMapKeyRef:
             name: guidelines
             key: pr-workflow.md
-    - type: Repository
-      repository:
-        org: myorg
-        repo: service-a
+    - type: File
+      file:
+        dirPath: /workspace/configs  # Directory mount
+        source:
+          configMapRef:
+            name: project-configs
 ```
 
 The Task controller automatically:
-- Resolves content from multiple sources (inline, ConfigMap, Secret, RemoteFile)
+- Resolves content from multiple sources (inline, ConfigMap)
 - Aggregates multiple contexts with the same `filePath` into a single file
 - Wraps aggregated content in XML tags for clarity
+- Mounts ConfigMaps as directories with `dirPath` + `configMapRef`
 - Creates ConfigMaps and configures Volume mounts
 
 With raw Jobs, users would need to manually:
@@ -98,33 +101,46 @@ spec:
   agentImage: quay.io/myorg/claude-agent:v2.0
   toolsImage: quay.io/myorg/dev-tools:latest
   credentials:
-    - secretRef: {name: github-token}
-      env: {name: GITHUB_TOKEN}
+    - name: github-token
+      secretRef:
+        name: github-creds
+        key: token
+      env: GITHUB_TOKEN
   scheduling:
     nodeSelector:
       workload-type: ai-agent
+  serviceAccountName: kubetask-agent
 ```
 
 Multiple Tasks share this configuration without repetition. With raw Jobs, each Job would need complete environment specification.
 
-#### BatchRun Integration
+#### Batch Operations via Kubernetes-Native Tools
 
-The Task abstraction enables batch operations:
+For running the same task across multiple targets, use Helm, Kustomize, or other templating tools:
 
+```yaml
+# Helm template example
+{{- range .Values.tasks }}
+---
+apiVersion: kubetask.io/v1alpha1
+kind: Task
+metadata:
+  name: {{ .name }}
+spec:
+  contexts:
+    - type: File
+      file:
+        filePath: /workspace/task.md
+        source:
+          inline: "Update dependencies for {{ .repo }}"
+{{- end }}
 ```
-Batch (WHAT + WHERE template)
-    ↓ instantiate
-BatchRun (execution instance)
-    ↓ creates
-Task[0], Task[1], Task[2], ... (one per variableContext)
-    ↓ creates
-Job[0], Job[1], Job[2], ...
-```
 
-BatchRun creates Task CRs, not Jobs directly. This means:
-- Standalone Task and batch-created Task use the same abstraction
-- No code duplication between single and batch execution paths
-- Consistent status tracking and lifecycle management
+This approach:
+- Uses existing Kubernetes tooling
+- Integrates with GitOps workflows
+- Avoids adding custom batch orchestration CRDs
+- Follows cloud-native best practices
 
 ### 3. Comparison Summary
 
@@ -133,26 +149,19 @@ BatchRun creates Task CRs, not Jobs directly. This means:
 | **Abstraction Level** | Generic container execution | AI-task-specific semantics |
 | **Context Handling** | Manual ConfigMap/Volume setup | Automatic aggregation from multiple sources |
 | **Environment Config** | Per-Job specification | Agent reference (reusable) |
-| **Batch Execution** | External orchestration required | Native BatchRun integration |
+| **Batch Execution** | Helm/Kustomize templating | Same - use Helm/Kustomize |
 | **Extensibility** | Modify Job templates | Add new Context types |
 | **API Semantics** | Container/Pod focused | Task/Workflow focused |
 | **Learning Curve** | Requires K8s Volume knowledge | Domain-focused API |
 
-### 4. Alternative Considered: Direct Job Creation
+### 4. Why We Removed Batch/BatchRun CRDs
 
-We considered having BatchRun create Jobs directly without the Task intermediary:
+Initially, KubeTask included Batch and BatchRun CRDs for batch operations. We removed them because:
 
-**Pros:**
-- One less abstraction layer
-- Slightly simpler codebase
-
-**Cons:**
-- No standalone single-task execution API
-- Would need separate logic for single vs batch execution
-- Users wanting simple one-off tasks would need to use Batch+BatchRun
-- Harder to track individual task status in batch scenarios
-
-We rejected this approach because it would complicate the user experience for simple use cases.
+1. **Kubernetes-native alternative exists**: Helm, Kustomize, and other templating tools already solve the "create multiple similar resources" problem
+2. **Reduced complexity**: Two fewer CRDs to maintain and document
+3. **Better tooling integration**: Works naturally with ArgoCD, Flux, and other GitOps tools
+4. **Separation of concerns**: KubeTask focuses on task execution, templating is handled by external tools
 
 ## Consequences
 
@@ -160,9 +169,10 @@ We rejected this approach because it would complicate the user experience for si
 
 - **Clear Domain Model**: Users think in terms of "Tasks" not "Jobs with specific configurations"
 - **Reduced Boilerplate**: Context aggregation eliminates manual ConfigMap/Volume setup
-- **Consistent API**: Same Task abstraction works standalone and in batches
-- **Separation of Concerns**: WHAT (Batch) + WHERE (Repository) + HOW (Agent)
+- **Simple API**: Only two CRDs (Task and Agent) to learn
+- **Separation of Concerns**: WHAT (Task) + HOW (Agent)
 - **GitOps Ready**: Declarative resources work naturally with GitOps tools
+- **Kubernetes-native Batch**: Use Helm/Kustomize for batch operations
 - **Observability**: `kubectl get tasks` provides AI-task-centric view
 
 ### Negative

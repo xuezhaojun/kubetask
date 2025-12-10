@@ -1,94 +1,95 @@
 # Agent Context Specification
 
-This document defines how context items from Task/Batch are mounted and provided to AI agents in Kubernetes Pods.
+This document defines how context items from Task are mounted and provided to AI agents in Kubernetes Pods.
 
 ## Overview
 
 Context items provide information to AI agents during task execution. KubeTask supports two modes for delivering context to agents:
 
-1. **Aggregated Mode (Default)**: Contexts without `mountPath` are combined into a single file
-2. **Explicit Mount Mode**: Contexts with `mountPath` are mounted at the specified location
+1. **Single File Mode**: Mount a single file at a specific path using `filePath`
+2. **Directory Mode**: Mount a ConfigMap as a directory using `dirPath`
 
 ## Context Priority
 
 Contexts are processed in the following priority order (lowest to highest):
 
 1. `Agent.defaultContexts` - Base layer (organization-wide defaults)
-2. `Batch.commonContext` - Shared across all tasks in the batch
-3. `Batch.variableContexts[i]` - Task-specific contexts
+2. `Task.contexts` - Task-specific contexts
 
-Higher priority contexts are processed after lower priority ones. When aggregated, this means they appear later in the file.
+Higher priority contexts take precedence. When multiple contexts target the same path, they are aggregated.
 
-## Default Aggregation
+## File Context Types
 
-When a `FileContext` does not specify a `mountPath`, its content is aggregated into:
-
-```
-/workspace/task.md
-```
-
-### Aggregation Format
-
-Multiple contexts are concatenated with markdown horizontal rules (`---`) as separators:
-
-```markdown
-[Content from Agent.defaultContexts[0]]
-
----
-
-[Content from Agent.defaultContexts[1]]
-
----
-
-[Content from Batch.commonContext[0]]
-
----
-
-[Content from Batch.variableContexts[i][0]]
-```
-
-## Explicit Mount Path
-
-When a `FileContext` specifies a `mountPath`, the file is mounted at that exact location in the pod filesystem.
-
-### API Definition
+### 1. Single File with Inline Content
 
 ```yaml
 type: File
 file:
-  name: config.json
+  filePath: /workspace/task.md
   source:
     inline: |
-      {"key": "value"}
-  mountPath: /etc/myapp/config.json  # Optional: explicit mount location
+      Update all dependencies to latest versions.
+      Run tests and create a PR.
 ```
 
-### Mount Path Guidelines
+### 2. Single File from ConfigMap Key
 
-- Can be any valid absolute path in the container filesystem
-- No reserved paths - all locations are available for mounting
-- Agent must handle both aggregated and explicitly mounted contexts
+```yaml
+type: File
+file:
+  filePath: /workspace/guide.md
+  source:
+    configMapKeyRef:
+      name: workflow-guides
+      key: pr-workflow.md
+```
+
+### 3. Directory from ConfigMap
+
+All keys in the ConfigMap become files in the specified directory:
+
+```yaml
+type: File
+file:
+  dirPath: /workspace/configs
+  source:
+    configMapRef:
+      name: my-configs  # Each key becomes a file
+```
+
+## Content Aggregation
+
+When multiple contexts target the same `filePath`, their contents are aggregated using XML tags:
+
+```xml
+<context index="0">
+[Content from first context]
+</context>
+
+<context index="1">
+[Content from second context]
+</context>
+```
 
 ## Workspace Structure Example
 
 ```
 /
 ├── workspace/
-│   └── task.md              # Aggregated context (default)
-├── etc/
-│   └── myapp/
-│       └── config.json      # Explicit: mountPath="/etc/myapp/config.json"
+│   ├── task.md              # filePath: /workspace/task.md
+│   ├── guide.md             # filePath: /workspace/guide.md
+│   └── configs/             # dirPath: /workspace/configs
+│       ├── config.json      # From ConfigMap key "config.json"
+│       └── settings.yaml    # From ConfigMap key "settings.yaml"
 └── home/
     └── agent/
         └── .claude/
-            └── CLAUDE.md    # Explicit: mountPath="/home/agent/.claude/CLAUDE.md"
+            └── CLAUDE.md    # filePath: /home/agent/.claude/CLAUDE.md
 ```
 
 ## Examples
 
-### Example 1: Basic Task with Aggregated Context
-
-All contexts are aggregated into `/workspace/task.md`:
+### Example 1: Simple Task with Inline Content
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -99,33 +100,14 @@ spec:
   contexts:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Update all dependencies to latest versions.
             Run tests and create a PR.
-    - type: File
-      file:
-        name: guide.md
-        source:
-          configMapKeyRef:
-            name: workflow-guides
-            key: pr-workflow.md
 ```
 
-Result in `/workspace/task.md`:
-```markdown
-Update all dependencies to latest versions.
-Run tests and create a PR.
-
----
-
-[Content of pr-workflow.md from ConfigMap]
-```
-
-### Example 2: Mixed Contexts (Aggregated + Explicit)
-
-Some contexts aggregated, others at specific paths:
+### Example 2: Task with ConfigMap Content
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -134,38 +116,35 @@ metadata:
   name: deploy-service
 spec:
   contexts:
-    # Aggregated into /workspace/task.md
+    # Task description from inline
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Deploy the service to production.
 
-    # Explicitly mounted at specific path
+    # Workflow guide from ConfigMap
     - type: File
       file:
-        name: CLAUDE.md
+        filePath: /workspace/guide.md
         source:
           configMapKeyRef:
-            name: agent-configs
-            key: claude-instructions.md
-        mountPath: /home/agent/.claude/CLAUDE.md
+            name: workflow-guides
+            key: deploy-guide.md
 
-    # Explicitly mounted configuration
+    # Multiple config files as directory
     - type: File
       file:
-        name: deploy-config.yaml
+        dirPath: /workspace/configs
         source:
-          secretKeyRef:
-            name: deploy-secrets
-            key: production.yaml
-        mountPath: /etc/deploy/config.yaml
+          configMapRef:
+            name: deploy-configs
 ```
 
-### Example 3: Batch with Agent Defaults
+### Example 3: Agent with Default Contexts
 
-Agent provides organization-wide defaults:
+Agent provides organization-wide defaults that are merged with Task contexts:
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
@@ -174,53 +153,44 @@ metadata:
   name: default
 spec:
   agentImage: quay.io/myorg/claude-agent:v1.0
+  serviceAccountName: kubetask-agent
   defaultContexts:
-    # Organization coding standards - aggregated
+    # Organization coding standards
     - type: File
       file:
-        name: coding-standards.md
+        filePath: /workspace/org-standards.md
         source:
           configMapKeyRef:
             name: org-standards
             key: coding.md
 
-    # Claude configuration - explicit path
+    # Claude configuration at specific path
     - type: File
       file:
-        name: CLAUDE.md
+        filePath: /home/agent/.claude/CLAUDE.md
         source:
           configMapKeyRef:
             name: org-standards
             key: claude-config.md
-        mountPath: /home/agent/.claude/CLAUDE.md
 ---
 apiVersion: kubetask.io/v1alpha1
-kind: Batch
+kind: Task
 metadata:
-  name: update-all-repos
+  name: update-service
 spec:
-  commonContext:
+  contexts:
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Update dependencies and create PR.
-  variableContexts:
-    - - type: File
-        file:
-          name: repo-config.json
-          source:
-            configMapKeyRef:
-              name: repo-configs
-              key: service-a.json
-          mountPath: /workspace/repo-config.json
 ```
 
-Result for each task:
-- `/workspace/task.md`: Contains coding-standards.md + task.md (aggregated)
+Result for the task:
+- `/workspace/task.md`: Task description
+- `/workspace/org-standards.md`: Organization standards (from Agent)
 - `/home/agent/.claude/CLAUDE.md`: Claude configuration (from Agent)
-- `/workspace/repo-config.json`: Repository-specific config (from variableContexts)
 
 ## Credentials
 
@@ -237,6 +207,7 @@ metadata:
   name: default
 spec:
   agentImage: quay.io/myorg/claude-agent:v1.0
+  serviceAccountName: kubetask-agent
   credentials:
     # GitHub token as environment variable
     - name: github-token
@@ -293,10 +264,9 @@ A credential can have both `env` and `mountPath` specified to expose the same se
 
 Agents should:
 
-1. **Always check `/workspace/task.md`** for the main task description
-2. **Handle additional mounted files** as specified in their documentation
-3. **Not assume any specific file structure** beyond `/workspace/task.md`
-4. **Use credentials securely**: Never log or expose credential values
+1. **Check for mounted context files** at the paths specified in the task
+2. **Handle the aggregation format** (XML tags) when multiple contexts target the same path
+3. **Use credentials securely**: Never log or expose credential values
 
 ### Environment Variables
 
@@ -313,21 +283,21 @@ The controller provides these environment variables to the agent:
 ### Recommended Agent Behavior
 
 ```
-1. Read /workspace/task.md to understand the task
-2. Check for any explicitly mounted configuration files
+1. Read context files to understand the task
+2. Check for any configuration files in specified directories
 3. Execute the task as described
 4. Report results via Task CR status updates
 ```
 
 ## Summary
 
-| Scenario | Mount Location |
-|----------|----------------|
-| No `mountPath` specified | Aggregated into `/workspace/task.md` |
-| `mountPath` specified | Mounted at the specified path |
+| Context Type | Usage |
+|--------------|-------|
+| `filePath` + `inline` | Single file with inline content |
+| `filePath` + `configMapKeyRef` | Single file from ConfigMap key |
+| `dirPath` + `configMapRef` | Directory with all ConfigMap keys as files |
 
 | Priority | Context Source | Description |
 |----------|---------------|-------------|
 | Lowest | `Agent.defaultContexts` | Organization defaults |
-| Medium | `Batch.commonContext` | Batch-wide shared context |
-| Highest | `Batch.variableContexts[i]` | Task-specific context |
+| Highest | `Task.contexts` | Task-specific context |

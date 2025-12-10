@@ -123,7 +123,7 @@ func (r *TaskReconciler) initializeTask(ctx context.Context, task *kubetaskv1alp
 	allContexts = append(allContexts, task.Spec.Contexts...)
 
 	// Process contexts and create ConfigMap for aggregated content
-	contextConfigMap, fileMounts, err := r.processContexts(ctx, task, allContexts)
+	contextConfigMap, fileMounts, dirMounts, err := r.processContexts(ctx, task, allContexts)
 	if err != nil {
 		log.Error(err, "unable to process contexts")
 		return ctrl.Result{}, err
@@ -140,7 +140,7 @@ func (r *TaskReconciler) initializeTask(ctx context.Context, task *kubetaskv1alp
 	}
 
 	// Create Job with agent configuration and context mounts
-	job := r.buildJob(task, jobName, agentConfig, contextConfigMap, fileMounts)
+	job := r.buildJob(task, jobName, agentConfig, contextConfigMap, fileMounts, dirMounts)
 
 	if err := r.Create(ctx, job); err != nil {
 		log.Error(err, "unable to create Job", "job", jobName)
@@ -268,16 +268,26 @@ type fileMount struct {
 	filePath string
 }
 
+// dirMount represents a directory to be mounted from a ConfigMap
+type dirMount struct {
+	dirPath       string
+	configMapName string
+	optional      bool
+}
+
 // processContexts processes all contexts and returns:
 // - ConfigMap for aggregated content (grouped by FilePath)
 // - List of file mounts for the job
+// - List of directory mounts (for ConfigMapRef)
 //
-// All context types (inline, configMap, secret) are resolved and aggregated by FilePath.
+// All context types (inline, configMap) are resolved and aggregated by FilePath.
 // Multiple contexts with the same FilePath will have their contents merged.
-func (r *TaskReconciler) processContexts(ctx context.Context, task *kubetaskv1alpha1.Task, contexts []kubetaskv1alpha1.Context) (*corev1.ConfigMap, []fileMount, error) {
+// Directory mounts (DirPath + ConfigMapRef) are passed through directly.
+func (r *TaskReconciler) processContexts(ctx context.Context, task *kubetaskv1alpha1.Task, contexts []kubetaskv1alpha1.Context) (*corev1.ConfigMap, []fileMount, []dirMount, error) {
 	// Group resolved contents by FilePath
 	// Key: filePath, Value: list of resolved contents to aggregate
 	contentsByPath := make(map[string][]string)
+	var dirMounts []dirMount
 
 	for _, c := range contexts {
 		if c.Type != kubetaskv1alpha1.ContextTypeFile || c.File == nil {
@@ -285,12 +295,31 @@ func (r *TaskReconciler) processContexts(ctx context.Context, task *kubetaskv1al
 		}
 
 		file := c.File
+
+		// Handle directory mount (DirPath + ConfigMapRef)
+		if file.DirPath != "" && file.Source.ConfigMapRef != nil {
+			optional := false
+			if file.Source.ConfigMapRef.Optional != nil {
+				optional = *file.Source.ConfigMapRef.Optional
+			}
+			dirMounts = append(dirMounts, dirMount{
+				dirPath:       file.DirPath,
+				configMapName: file.Source.ConfigMapRef.Name,
+				optional:      optional,
+			})
+			continue
+		}
+
+		// Handle file mount (FilePath + Inline/ConfigMapKeyRef)
 		filePath := file.FilePath
+		if filePath == "" {
+			continue
+		}
 
 		// Resolve content from any source type
 		content, err := r.resolveFileContent(ctx, task.Namespace, file)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if content != "" {
 			contentsByPath[filePath] = append(contentsByPath[filePath], content)
@@ -351,7 +380,7 @@ func (r *TaskReconciler) processContexts(ctx context.Context, task *kubetaskv1al
 		}
 	}
 
-	return configMap, fileMounts, nil
+	return configMap, fileMounts, dirMounts, nil
 }
 
 // sanitizeConfigMapKey converts a file path to a valid ConfigMap key
@@ -387,29 +416,12 @@ func (r *TaskReconciler) resolveFileContent(ctx context.Context, namespace strin
 		return "", fmt.Errorf("key %s not found in ConfigMap %s", ref.Key, ref.Name)
 	}
 
-	if file.Source.SecretKeyRef != nil {
-		ref := file.Source.SecretKeyRef
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, secret); err != nil {
-			if ref.Optional != nil && *ref.Optional {
-				return "", nil
-			}
-			return "", err
-		}
-		if content, ok := secret.Data[ref.Key]; ok {
-			return string(content), nil
-		}
-		if ref.Optional != nil && *ref.Optional {
-			return "", nil
-		}
-		return "", fmt.Errorf("key %s not found in Secret %s", ref.Key, ref.Name)
-	}
-
+	// ConfigMapRef is handled separately in processContexts as a directory mount
 	return "", nil
 }
 
 // buildJob creates a Job object for the task with context mounts
-func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, cfg agentConfig, contextConfigMap *corev1.ConfigMap, fileMounts []fileMount) *batchv1.Job {
+func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, cfg agentConfig, contextConfigMap *corev1.ConfigMap, fileMounts []fileMount, dirMounts []dirMount) *batchv1.Job {
 	var volumes []corev1.Volume
 	var volumeMounts []corev1.VolumeMount
 	var initContainers []corev1.Container
@@ -527,6 +539,26 @@ func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, c
 		}
 	}
 
+	// Add directory mounts (ConfigMapRef - entire ConfigMap as a directory)
+	for i, dm := range dirMounts {
+		volumeName := fmt.Sprintf("dir-mount-%d", i)
+		volumes = append(volumes, corev1.Volume{
+			Name: volumeName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: dm.configMapName,
+					},
+					Optional: &dm.optional,
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      volumeName,
+			MountPath: dm.dirPath,
+		})
+	}
+
 	// Build pod labels - start with base labels
 	podLabels := map[string]string{
 		"app":              "kubetask",
@@ -595,4 +627,9 @@ func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, c
 			},
 		},
 	}
+}
+
+// boolPtr returns a pointer to the given bool value
+func boolPtr(b bool) *bool {
+	return &b
 }

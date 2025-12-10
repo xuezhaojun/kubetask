@@ -4,7 +4,7 @@ This document provides guidelines for AI assistants (like Claude) working on the
 
 ## Project Overview
 
-KubeTask is a Kubernetes-native system that executes AI-powered tasks across multiple repositories using Custom Resources (CRs) and the Operator pattern. It enables batch execution of tasks on multiple repositories with AI agents like Claude.
+KubeTask is a Kubernetes-native system that executes AI-powered tasks using Custom Resources (CRs) and the Operator pattern. It provides a simple, declarative way to run AI agents (like Claude, Gemini) as Kubernetes Jobs.
 
 **Key Technologies:**
 - Kubernetes Custom Resource Definitions (CRDs)
@@ -16,31 +16,31 @@ KubeTask is a Kubernetes-native system that executes AI-powered tasks across mul
 - No external dependencies (no PostgreSQL, Redis)
 - Kubernetes-native (uses etcd for state, Jobs for execution)
 - Declarative and GitOps-friendly
-- Separation of concerns: WHAT (Batch) + WHERE (Repository) + HOW (Agent)
+- Simple API: Task (WHAT to do) + Agent (HOW to execute)
+- Use Helm/Kustomize for batch operations (multiple Tasks)
 
 ## Core Concepts
 
 ### Resource Hierarchy
 
-1. **Batch** - Task batch template (WHAT to do + WHERE to do it)
-2. **BatchRun** - Execution instance of a Batch
-3. **Task** - Single task execution (simplified API)
-4. **Agent** - Workspace environment configuration (HOW to execute)
+1. **Task** - Single task execution (the primary API)
+2. **Agent** - AI agent configuration (HOW to execute)
 
 ### Important Design Decisions
 
-- **Batch** (not Bundle) - Aligns with Kubernetes `batch/v1`
 - **Agent** (not KubeTaskConfig) - Stable, project-independent naming
 - **AgentImage** (not AgentTemplateRef) - Simple container image, controller generates Jobs
-- **agentRef** - Reference from Batch/Task to Agent
-- **variableContexts** - Highlights constant/variable dichotomy
+- **agentRef** - Reference from Task to Agent
+- **No Batch/BatchRun** - Use Helm/Kustomize to create multiple Tasks (Kubernetes-native approach)
 
 ### Context System
 
 Tasks operate on different types of contexts:
-- **File Context**: Task descriptions, configuration files (from inline, ConfigMap, or Secret)
-- **Repository Context**: GitHub repositories to work on
-- **Future**: API, Database, CloudResource contexts (extensible design)
+- **File Context**: Task descriptions, configuration files (from inline or ConfigMap)
+  - `FilePath` + `Inline`: Single file with inline content
+  - `FilePath` + `ConfigMapKeyRef`: Single file from ConfigMap key
+  - `DirPath` + `ConfigMapRef`: Directory with all ConfigMap keys as files
+- **Future**: MCP contexts (extensible design)
 
 ## Code Standards
 
@@ -66,7 +66,7 @@ All Go files must include the copyright header:
 3. **Kubernetes Resources**:
    - CRD Group: `kubetask.io`
    - API Version: `v1alpha1`
-   - Kinds: `Batch`, `BatchRun`, `Task`, `Agent`
+   - Kinds: `Task`, `Agent`
 
 ### Code Comments
 
@@ -169,16 +169,15 @@ make agent-build AGENT=gemini IMG_REGISTRY=docker.io IMG_ORG=myorg VERSION=v1.0.
 ```
 kubetask/
 ├── api/v1alpha1/          # CRD type definitions
-│   ├── types.go           # Main API types
+│   ├── types.go           # Main API types (Task, Agent)
 │   ├── register.go        # Scheme registration
 │   └── zz_generated.deepcopy.go  # Generated deepcopy
 ├── cmd/controller/        # Controller main entry point
 │   └── main.go
 ├── internal/controller/   # Controller reconcilers
-│   ├── task_controller.go
-│   └── batchrun_controller.go
+│   └── task_controller.go
 ├── deploy/               # Kubernetes manifests
-│   └── crds/            # Generated CRD YAMLs
+│   └── crds/            # Generated CRD YAMLs (Task, Agent)
 ├── charts/kubetask/     # Helm chart
 ├── hack/                # Build and codegen scripts
 ├── docs/                # Documentation
@@ -259,8 +258,6 @@ Integration tests use [envtest](https://book.kubebuilder.io/reference/envtest.ht
 internal/controller/
 ├── task_controller.go           # Controller implementation
 ├── task_controller_test.go      # Integration tests (//go:build integration)
-├── batchrun_controller.go
-├── batchrun_controller_test.go  # Integration tests (//go:build integration)
 └── suite_test.go                # Test suite setup (//go:build integration)
 ```
 
@@ -268,7 +265,7 @@ internal/controller/
 
 - Located in `e2e/` directory
 - Use Kind cluster for full system testing
-- Test complete workflows (Batch → BatchRun → Jobs)
+- Test complete workflows (Task → Job)
 - Verify status updates and conditions
 - Check that cleanup works correctly
 
@@ -286,17 +283,17 @@ internal/controller/
 
 The agent image is discovered via:
 1. `Agent.spec.agentImage` (from referenced Agent)
-2. Built-in default image (fallback: `quay.io/zhaoxue/kubetask-agent:latest`)
+2. Built-in default image (fallback: `quay.io/zhaoxue/kubetask-agent-gemini:latest`)
 
 Agent lookup:
-- Batch/Task uses `agentRef` to reference a Agent
+- Task uses `agentRef` to reference an Agent
 - If not specified, looks for Agent named "default" in the same namespace
 - If not found, uses built-in default image
 
 The controller generates Jobs with:
 - Labels: `kubetask.io/task`
 - Env vars: `TASK_NAME`, `TASK_NAMESPACE`
-- ServiceAccount: `kubetask-agent`
+- ServiceAccount from Agent spec
 - Owner references for garbage collection
 
 ## Kubernetes Integration
@@ -307,16 +304,8 @@ The controller requires permissions for:
 - Creating/updating/deleting Jobs
 - Reading/writing CR status
 - Reading Agents
-- Reading Secrets (for future use)
+- Reading ConfigMaps and Secrets
 - Creating Events
-
-The agent requires minimal permissions:
-- Updating BatchRun status only
-
-### Storage
-
-- Workspace PVC must support `ReadWriteMany` access mode
-- Recommended: NFS, CephFS, Azure Files, GCP Filestore, AWS EFS
 
 ## Documentation
 
@@ -420,4 +409,4 @@ kubectl logs job/<job-name> -n kubetask-system
 
 ---
 
-**Last Updated**: 2025-12-08
+**Last Updated**: 2025-12-10

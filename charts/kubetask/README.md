@@ -1,13 +1,12 @@
 # KubeTask Helm Chart
 
-This Helm chart deploys KubeTask, a Kubernetes-native system for executing AI agent tasks across multiple repositories.
+This Helm chart deploys KubeTask, a Kubernetes-native system for executing AI-powered tasks.
 
 ## Prerequisites
 
 - Kubernetes 1.25+
 - Helm 3.8+
-- PersistentVolume provisioner support in the underlying infrastructure (for workspace storage)
-- GitHub Personal Access Token with repo permissions
+- GitHub Personal Access Token (optional, for repository operations)
 - Anthropic Claude API key or Vertex AI credentials
 
 ## Installing the Chart
@@ -20,9 +19,7 @@ kubectl create namespace kubetask-system
 
 # Install with minimal configuration
 helm install kubetask ./charts/kubetask \
-  --namespace kubetask-system \
-  --set github.token=<YOUR_GITHUB_TOKEN> \
-  --set claude.apiKey=<YOUR_CLAUDE_API_KEY>
+  --namespace kubetask-system
 ```
 
 ### Production Installation
@@ -42,25 +39,6 @@ controller:
     requests:
       cpu: 200m
       memory: 256Mi
-
-workspace:
-  enabled: true
-  storageClass: nfs-client  # Use your storage class
-  size: 200Gi
-
-github:
-  token: <YOUR_GITHUB_TOKEN>
-
-claude:
-  apiKey: <YOUR_CLAUDE_API_KEY>
-
-# Or use Vertex AI
-# claude:
-#   vertexAI:
-#     enabled: true
-#     projectID: your-gcp-project
-#     location: us-central1
-#     serviceAccountKey: <BASE64_ENCODED_KEY>
 
 cleanup:
   enabled: true
@@ -95,29 +73,8 @@ The following table lists the configurable parameters of the KubeTask chart and 
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `agent.image.repository` | Agent image repository | `quay.io/zhaoxue/kubetask-agent` |
+| `agent.image.repository` | Agent image repository | `quay.io/zhaoxue/kubetask-agent-gemini` |
 | `agent.image.tag` | Agent image tag | `latest` |
-
-### Workspace Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `workspace.enabled` | Enable workspace PVC creation | `true` |
-| `workspace.storageClass` | Storage class for PVC | `""` (default storage class) |
-| `workspace.size` | Size of workspace volume | `100Gi` |
-| `workspace.accessMode` | Access mode (must be ReadWriteMany) | `ReadWriteMany` |
-
-### Authentication Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `github.token` | GitHub personal access token | `""` |
-| `github.existingSecret` | Existing secret name for GitHub token | `""` |
-| `claude.apiKey` | Claude API key | `""` |
-| `claude.existingSecret` | Existing secret name for Claude API key | `""` |
-| `claude.vertexAI.enabled` | Enable Vertex AI integration | `false` |
-| `claude.vertexAI.projectID` | GCP project ID | `""` |
-| `claude.vertexAI.location` | GCP location | `""` |
 
 ### Cleanup Configuration
 
@@ -125,67 +82,122 @@ The following table lists the configurable parameters of the KubeTask chart and 
 |-----------|-------------|---------|
 | `cleanup.enabled` | Enable automatic cleanup CronJob | `true` |
 | `cleanup.schedule` | Cron schedule for cleanup | `"0 2 * * *"` |
-| `cleanup.ttlDays` | TTL for completed BatchRuns (days) | `3` |
-| `cleanup.failedTTLDays` | TTL for failed BatchRuns (days) | `7` |
+| `cleanup.ttlDays` | TTL for completed Tasks (days) | `3` |
+| `cleanup.failedTTLDays` | TTL for failed Tasks (days) | `7` |
 
 ## Usage Examples
 
-### Creating a Batch
+### Creating an Agent
 
 ```yaml
 apiVersion: kubetask.io/v1alpha1
-kind: Batch
+kind: Agent
 metadata:
-  name: upgrade-deps
+  name: default
   namespace: kubetask-system
 spec:
-  commonContext:
+  agentImage: quay.io/myorg/claude-agent:v1.0
+  serviceAccountName: kubetask-agent
+  credentials:
+    - name: anthropic-api-key
+      secretRef:
+        name: ai-credentials
+        key: anthropic-key
+      env: ANTHROPIC_API_KEY
+    - name: github-token
+      secretRef:
+        name: github-creds
+        key: token
+      env: GITHUB_TOKEN
+```
+
+### Creating a Task
+
+```yaml
+apiVersion: kubetask.io/v1alpha1
+kind: Task
+metadata:
+  name: update-deps
+  namespace: kubetask-system
+spec:
+  contexts:
+    # Task description
     - type: File
       file:
-        name: task.md
+        filePath: /workspace/task.md
         source:
           inline: |
             Update go.mod to Go 1.21 and run go mod tidy.
             Ensure all tests pass after the upgrade.
-  variableContexts:
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: repo1
-          branch: main
-    - - type: Repository
-        repository:
-          org: myorg
-          repo: repo2
-          branch: main
+
+    # Workflow guide from ConfigMap
+    - type: File
+      file:
+        filePath: /workspace/guide.md
+        source:
+          configMapKeyRef:
+            name: workflow-guides
+            key: pr-workflow.md
+
+    # Multiple config files as directory
+    - type: File
+      file:
+        dirPath: /workspace/configs
+        source:
+          configMapRef:
+            name: project-configs
 ```
 
-### Creating a BatchRun
+### Batch Operations with Helm
+
+For running the same task across multiple targets, use Helm templating:
 
 ```yaml
+# values.yaml
+tasks:
+  - name: update-service-a
+    repo: service-a
+  - name: update-service-b
+    repo: service-b
+  - name: update-service-c
+    repo: service-c
+
+# templates/tasks.yaml
+{{- range .Values.tasks }}
+---
 apiVersion: kubetask.io/v1alpha1
-kind: BatchRun
+kind: Task
 metadata:
-  name: upgrade-deps-001
-  namespace: kubetask-system
+  name: {{ .name }}
 spec:
-  batchRef: upgrade-deps
+  contexts:
+    - type: File
+      file:
+        filePath: /workspace/task.md
+        source:
+          inline: "Update dependencies for {{ .repo }}"
+{{- end }}
+```
+
+```bash
+# Generate and apply multiple tasks
+helm template my-tasks ./chart | kubectl apply -f -
 ```
 
 ### Monitoring Progress
 
 ```bash
-# Watch BatchRun status
-kubectl get batchrun -n kubetask-system -w
+# Watch Task status
+kubectl get tasks -n kubetask-system -w
 
 # View detailed status
-kubectl describe batchrun upgrade-deps-001 -n kubetask-system
+kubectl describe task update-deps -n kubetask-system
 
 # Check Jobs
-kubectl get jobs -n kubetask-system -l kubetask.io/batchrun=upgrade-deps-001
+kubectl get jobs -n kubetask-system -l kubetask.io/task=update-deps
 
 # View task logs
-kubectl logs job/upgrade-deps-001-task-0 -n kubetask-system
+kubectl logs job/$(kubectl get task update-deps -o jsonpath='{.status.jobName}') -n kubetask-system
 ```
 
 ## Uninstalling the Chart
@@ -200,17 +212,6 @@ To also delete the namespace:
 kubectl delete namespace kubetask-system
 ```
 
-## Storage Requirements
-
-KubeTask requires a PersistentVolume with `ReadWriteMany` access mode for the workspace. This allows multiple agent Jobs to run concurrently.
-
-Recommended storage solutions:
-- NFS
-- CephFS
-- Azure Files
-- Google Cloud Filestore
-- AWS EFS
-
 ## Security Considerations
 
 1. **Secrets Management**: Never commit secrets to Git. Use:
@@ -220,8 +221,7 @@ Recommended storage solutions:
    - HashiCorp Vault
 
 2. **RBAC**: The chart creates minimal RBAC permissions:
-   - Controller: Manages CRs and Jobs
-   - Agent: Updates BatchRun status only
+   - Controller: Manages CRs and Jobs only
 
 3. **Network Policies**: Consider adding NetworkPolicies to restrict traffic
 
@@ -236,7 +236,7 @@ Recommended storage solutions:
 kubectl logs -n kubetask-system deployment/kubetask-controller
 
 # Check RBAC permissions
-kubectl auth can-i create batchruns --as=system:serviceaccount:kubetask-system:kubetask-controller -n kubetask-system
+kubectl auth can-i create tasks --as=system:serviceaccount:kubetask-system:kubetask-controller -n kubetask-system
 ```
 
 ### Jobs failing
@@ -248,26 +248,13 @@ kubectl get jobs -n kubetask-system --field-selector status.successful=0
 # Check Job logs
 kubectl logs job/<job-name> -n kubetask-system
 
-# Check workspace PVC
-kubectl get pvc -n kubetask-system
-```
-
-### Storage issues
-
-```bash
-# Verify PVC is bound
-kubectl get pvc -n kubetask-system
-
-# Check storage class
-kubectl get storageclass
-
-# Ensure ReadWriteMany support
-kubectl describe pvc kubetask-workspace -n kubetask-system
+# Describe job for events
+kubectl describe job/<job-name> -n kubetask-system
 ```
 
 ## Contributing
 
-See the main project [README](../../../README.md) for contribution guidelines.
+See the main project [README](../../README.md) for contribution guidelines.
 
 ## License
 

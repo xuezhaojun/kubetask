@@ -160,22 +160,6 @@ var _ = AfterSuite(func() {
 		}
 	}
 
-	// Delete all BatchRuns in test namespace
-	batchRuns := &kubetaskv1alpha1.BatchRunList{}
-	if err := k8sClient.List(ctx, batchRuns, client.InNamespace(testNS)); err == nil {
-		for _, br := range batchRuns.Items {
-			_ = k8sClient.Delete(ctx, &br)
-		}
-	}
-
-	// Delete all Batches in test namespace
-	batches := &kubetaskv1alpha1.BatchList{}
-	if err := k8sClient.List(ctx, batches, client.InNamespace(testNS)); err == nil {
-		for _, b := range batches.Items {
-			_ = k8sClient.Delete(ctx, &b)
-		}
-	}
-
 	// Delete all Agents in test namespace
 	agents := &kubetaskv1alpha1.AgentList{}
 	if err := k8sClient.List(ctx, agents, client.InNamespace(testNS)); err == nil {
