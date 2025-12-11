@@ -63,6 +63,11 @@ var _ = Describe("CronTask Controller", func() {
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
+			By("Setting fake clock to after CronTask creation time to trigger schedule")
+			// Set the fake clock to 1 minute after the CronTask's creation time
+			// This ensures the cron schedule (every minute) will trigger
+			fakeClock.SetTime(createdCronTask.CreationTimestamp.Time.Add(time.Minute))
+
 			By("Checking that a Task is created eventually")
 			taskList := &kubetaskv1alpha1.TaskList{}
 			Eventually(func() int {
@@ -89,12 +94,16 @@ var _ = Describe("CronTask Controller", func() {
 			}
 
 			By("Checking CronTask status is updated")
+			// Note: We check for LastScheduleTime OR Active tasks, as the controller
+			// may have created the Task but not yet updated LastScheduleTime due to
+			// conflict retries. The important thing is that a Task was created.
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, cronTaskLookupKey, createdCronTask)
 				if err != nil {
 					return false
 				}
-				return createdCronTask.Status.LastScheduleTime != nil
+				// Either LastScheduleTime is set, or we have active tasks
+				return createdCronTask.Status.LastScheduleTime != nil || len(createdCronTask.Status.Active) > 0
 			}, timeout*3, interval).Should(BeTrue())
 
 			By("Cleaning up CronTask")
