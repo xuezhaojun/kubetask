@@ -19,8 +19,15 @@ ARG BASE_IMAGE=quay.io/zhaoxue/kubetask-agent-base:latest
 FROM ${BASE_IMAGE}
 
 # Install Goose CLI
+# Goose requires libxcb and related X11 libraries even in headless mode
 USER root
-RUN curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxcb1 \
+    libxcb-render0 \
+    libxcb-shape0 \
+    libxcb-xfixes0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash \
     && mv /root/.local/bin/goose /usr/local/bin/goose
 USER agent
 
