@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-shape0 \
     libxcb-xfixes0 \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash \
+    && curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash \
     && mv /root/.local/bin/goose /usr/local/bin/goose
 USER agent
 
