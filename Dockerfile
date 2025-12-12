@@ -29,7 +29,7 @@ ARG BUILD_TIME=unknown
 # Add labels for traceability
 LABEL org.opencontainers.image.revision="${GIT_COMMIT}" \
       org.opencontainers.image.created="${BUILD_TIME}" \
-      org.opencontainers.image.source="https://github.com/stolostron/kubetask" \
+      org.opencontainers.image.source="https://github.com/kubetask-io/kubetask" \
       org.opencontainers.image.title="kubetask-controller" \
       org.opencontainers.image.description="KubeTask Controller - Kubernetes-native AI task execution"
 

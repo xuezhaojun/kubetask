@@ -418,7 +418,7 @@ kubectl logs job/<job-name> -n kubetask-system
 - **Version**: v0.1.0
 - **API Stability**: v1alpha1 (subject to change)
 - **License**: Apache License 2.0
-- **Maintainer**: stolostron/kubetask team
+- **Maintainer**: kubetask-io/kubetask team
 
 ## Getting Help
 

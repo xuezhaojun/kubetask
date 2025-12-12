@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://goreportcard.com/report/github.com/stolostron/kubetask"><img src="https://goreportcard.com/badge/github.com/stolostron/kubetask" alt="Go Report Card"></a>
+  <a href="https://goreportcard.com/report/github.com/kubetask-io/kubetask"><img src="https://goreportcard.com/badge/github.com/kubetask-io/kubetask" alt="Go Report Card"></a>
 </p>
 
 ## Overview
@@ -357,7 +357,7 @@ For detailed guidance on building custom agent images, see the [Agent Developer 
 
 ```bash
 # Clone the repository
-git clone https://github.com/stolostron/kubetask.git
+git clone https://github.com/kubetask-io/kubetask.git
 cd kubetask
 
 # Build the controller
@@ -520,8 +520,8 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines.
 
 ## Community
 
-- **Issues**: [GitHub Issues](https://github.com/stolostron/kubetask/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/stolostron/kubetask/discussions)
+- **Issues**: [GitHub Issues](https://github.com/kubetask-io/kubetask/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/kubetask-io/kubetask/discussions)
 
 ## License
 
