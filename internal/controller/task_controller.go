@@ -338,7 +338,6 @@ func (r *TaskReconciler) getAgentConfig(ctx context.Context, task *kubetaskv1alp
 		credentials:        agent.Spec.Credentials,
 		podSpec:            agent.Spec.PodSpec,
 		serviceAccountName: agent.Spec.ServiceAccountName,
-		humanInTheLoop:     agent.Spec.HumanInTheLoop,
 	}, nil
 }
 

@@ -85,7 +85,8 @@ Task (single task execution)
 ├── TaskSpec
 │   ├── description: *string         (syntactic sugar for /workspace/task.md)
 │   ├── contexts: []ContextMount     (references to Context CRDs)
-│   └── agentRef: string
+│   ├── agentRef: string
+│   └── humanInTheLoop: *HumanInTheLoop
 └── TaskExecutionStatus
     ├── phase: TaskPhase
     ├── jobName: string
@@ -118,7 +119,6 @@ Agent (execution configuration)
     ├── agentImage: string
     ├── workspaceDir: string         (default: "/workspace")
     ├── command: []string
-    ├── humanInTheLoop: *HumanInTheLoop
     ├── contexts: []ContextMount     (references to Context CRDs)
     ├── credentials: []Credential
     ├── podSpec: *AgentPodSpec
@@ -140,9 +140,10 @@ type Task struct {
 }
 
 type TaskSpec struct {
-    Description *string        // Syntactic sugar for /workspace/task.md
-    Contexts    []ContextMount // References to Context CRDs
-    AgentRef    string         // Reference to Agent
+    Description    *string         // Syntactic sugar for /workspace/task.md
+    Contexts       []ContextMount  // References to Context CRDs
+    AgentRef       string          // Reference to Agent
+    HumanInTheLoop *HumanInTheLoop // Keep container alive after task completion
 }
 
 // ContextMount references a Context and specifies how to mount it
@@ -239,8 +240,7 @@ type Agent struct {
 type AgentSpec struct {
     AgentImage         string
     WorkspaceDir       string          // Working directory (default: "/workspace")
-    Command            []string        // Custom entrypoint command
-    HumanInTheLoop     *HumanInTheLoop // Keep container alive after task completion
+    Command            []string        // Custom entrypoint command (required for humanInTheLoop)
     Contexts           []ContextMount  // References to Context CRDs
     Credentials        []Credential
     PodSpec            *AgentPodSpec   // Pod configuration (labels, scheduling, runtime)

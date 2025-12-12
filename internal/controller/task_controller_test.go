@@ -828,14 +828,14 @@ var _ = Describe("TaskController", func() {
 		})
 	})
 
-	Context("When creating a Task with Agent that has humanInTheLoop enabled", func() {
+	Context("When creating a Task with humanInTheLoop enabled", func() {
 		It("Should wrap command with sleep for keep-alive", func() {
 			taskName := "test-task-hitl"
 			agentName := "test-agent-hitl"
 			description := "# Human-in-the-loop test"
 			keepAliveSeconds := int32(1800) // 30 minutes
 
-			By("Creating Agent with humanInTheLoop enabled")
+			By("Creating Agent with command")
 			agent := &kubetaskv1alpha1.Agent{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      agentName,
@@ -844,15 +844,11 @@ var _ = Describe("TaskController", func() {
 				Spec: kubetaskv1alpha1.AgentSpec{
 					ServiceAccountName: "test-agent",
 					Command:            []string{"sh", "-c", "echo hello"},
-					HumanInTheLoop: &kubetaskv1alpha1.HumanInTheLoop{
-						Enabled:          true,
-						KeepAliveSeconds: &keepAliveSeconds,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, agent)).Should(Succeed())
 
-			By("Creating Task")
+			By("Creating Task with humanInTheLoop enabled")
 			task := &kubetaskv1alpha1.Task{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      taskName,
@@ -861,6 +857,10 @@ var _ = Describe("TaskController", func() {
 				Spec: kubetaskv1alpha1.TaskSpec{
 					AgentRef:    agentName,
 					Description: &description,
+					HumanInTheLoop: &kubetaskv1alpha1.HumanInTheLoop{
+						Enabled:          true,
+						KeepAliveSeconds: &keepAliveSeconds,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, task)).Should(Succeed())
@@ -906,7 +906,7 @@ var _ = Describe("TaskController", func() {
 			agentName := "test-agent-hitl-default"
 			description := "# Human-in-the-loop default test"
 
-			By("Creating Agent with humanInTheLoop enabled but no keepAliveSeconds")
+			By("Creating Agent with command")
 			agent := &kubetaskv1alpha1.Agent{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      agentName,
@@ -915,14 +915,11 @@ var _ = Describe("TaskController", func() {
 				Spec: kubetaskv1alpha1.AgentSpec{
 					ServiceAccountName: "test-agent",
 					Command:            []string{"./run.sh"},
-					HumanInTheLoop: &kubetaskv1alpha1.HumanInTheLoop{
-						Enabled: true,
-					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, agent)).Should(Succeed())
 
-			By("Creating Task")
+			By("Creating Task with humanInTheLoop enabled but no keepAliveSeconds")
 			task := &kubetaskv1alpha1.Task{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      taskName,
@@ -931,6 +928,9 @@ var _ = Describe("TaskController", func() {
 				Spec: kubetaskv1alpha1.TaskSpec{
 					AgentRef:    agentName,
 					Description: &description,
+					HumanInTheLoop: &kubetaskv1alpha1.HumanInTheLoop{
+						Enabled: true,
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, task)).Should(Succeed())

@@ -1,4 +1,4 @@
-# golangci-lint configuration for CodeSweep
+# golangci-lint configuration for KubeTask
 # Using golangci-lint v2.6.2 with Go 1.25
 # Reference: https://golangci-lint.run/docs/usage/configuration/
 

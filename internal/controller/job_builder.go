@@ -23,7 +23,6 @@ type agentConfig struct {
 	credentials        []kubetaskv1alpha1.Credential
 	podSpec            *kubetaskv1alpha1.AgentPodSpec
 	serviceAccountName string
-	humanInTheLoop     *kubetaskv1alpha1.HumanInTheLoop
 }
 
 // fileMount represents a file to be mounted at a specific path
@@ -157,10 +156,10 @@ func buildJob(task *kubetaskv1alpha1.Task, jobName string, cfg agentConfig, cont
 	)
 
 	// Add human-in-the-loop keep-alive environment variable if enabled
-	if cfg.humanInTheLoop != nil && cfg.humanInTheLoop.Enabled {
+	if task.Spec.HumanInTheLoop != nil && task.Spec.HumanInTheLoop.Enabled {
 		keepAliveSeconds := DefaultKeepAliveSeconds
-		if cfg.humanInTheLoop.KeepAliveSeconds != nil {
-			keepAliveSeconds = *cfg.humanInTheLoop.KeepAliveSeconds
+		if task.Spec.HumanInTheLoop.KeepAliveSeconds != nil {
+			keepAliveSeconds = *task.Spec.HumanInTheLoop.KeepAliveSeconds
 		}
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  EnvHumanInTheLoopKeepAlive,
@@ -315,11 +314,11 @@ func buildJob(task *kubetaskv1alpha1.Task, jobName string, cfg agentConfig, cont
 
 	// Apply command if specified
 	if len(cfg.command) > 0 {
-		// If humanInTheLoop is enabled, wrap the command with sleep
-		if cfg.humanInTheLoop != nil && cfg.humanInTheLoop.Enabled {
+		// If humanInTheLoop is enabled on the Task, wrap the command with sleep
+		if task.Spec.HumanInTheLoop != nil && task.Spec.HumanInTheLoop.Enabled {
 			keepAliveSeconds := DefaultKeepAliveSeconds
-			if cfg.humanInTheLoop.KeepAliveSeconds != nil {
-				keepAliveSeconds = *cfg.humanInTheLoop.KeepAliveSeconds
+			if task.Spec.HumanInTheLoop.KeepAliveSeconds != nil {
+				keepAliveSeconds = *task.Spec.HumanInTheLoop.KeepAliveSeconds
 			}
 
 			// Build the wrapped command that runs original command then sleeps
@@ -331,7 +330,7 @@ func buildJob(task *kubetaskv1alpha1.Task, jobName string, cfg agentConfig, cont
 			)
 			agentContainer.Command = []string{"sh", "-c", wrappedScript}
 		} else {
-			// No humanInTheLoop, use command as-is
+			// No humanInTheLoop on Task, use command as-is
 			agentContainer.Command = cfg.command
 		}
 	}

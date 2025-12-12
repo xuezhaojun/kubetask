@@ -244,26 +244,28 @@ func TestBuildJob_WithCredentials(t *testing.T) {
 }
 
 func TestBuildJob_WithHumanInTheLoop(t *testing.T) {
+	keepAlive := int32(1800)
 	task := &kubetaskv1alpha1.Task{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-task",
 			Namespace: "default",
 			UID:       types.UID("test-uid"),
 		},
+		Spec: kubetaskv1alpha1.TaskSpec{
+			HumanInTheLoop: &kubetaskv1alpha1.HumanInTheLoop{
+				Enabled:          true,
+				KeepAliveSeconds: &keepAlive,
+			},
+		},
 	}
 	task.APIVersion = "kubetask.io/v1alpha1"
 	task.Kind = "Task"
 
-	keepAlive := int32(1800)
 	cfg := agentConfig{
 		agentImage:         "test-agent:v1.0.0",
 		workspaceDir:       "/workspace",
 		serviceAccountName: "test-sa",
 		command:            []string{"sh", "-c", "echo hello"},
-		humanInTheLoop: &kubetaskv1alpha1.HumanInTheLoop{
-			Enabled:          true,
-			KeepAliveSeconds: &keepAlive,
-		},
 	}
 
 	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, nil)

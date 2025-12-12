@@ -203,6 +203,16 @@ type TaskSpec struct {
 	// If not specified, uses the "default" Agent in the same namespace.
 	// +optional
 	AgentRef string `json:"agentRef,omitempty"`
+
+	// HumanInTheLoop configures whether this task requires human participation.
+	// When enabled, the agent container will remain running after task completion,
+	// allowing users to exec into the container for debugging, review, or manual intervention.
+	//
+	// IMPORTANT: When humanInTheLoop is enabled, the Agent MUST also specify the Command field.
+	// The controller wraps the command to add a sleep after completion.
+	// Without Command in the Agent, the controller cannot wrap the entrypoint.
+	// +optional
+	HumanInTheLoop *HumanInTheLoop `json:"humanInTheLoop,omitempty"`
 }
 
 // TaskExecutionStatus defines the observed state of Task
@@ -270,26 +280,16 @@ type AgentSpec struct {
 	// +kubebuilder:validation:Pattern=`^/.*`
 	WorkspaceDir string `json:"workspaceDir,omitempty"`
 
-	// HumanInTheLoop configures whether tasks using this agent require human participation.
-	// When enabled, the agent container will remain running after task completion,
-	// allowing users to exec into the container for debugging, review, or manual intervention.
-	//
-	// IMPORTANT: When humanInTheLoop is enabled, you MUST also specify the Command field.
-	// The controller wraps the command to add a sleep after completion.
-	// Without Command, the controller cannot wrap the entrypoint.
-	// +optional
-	HumanInTheLoop *HumanInTheLoop `json:"humanInTheLoop,omitempty"`
-
 	// Command specifies the entrypoint command for the agent container.
 	// This overrides the default ENTRYPOINT of the container image.
 	//
-	// This field is REQUIRED when humanInTheLoop is enabled, as the controller
+	// This field is REQUIRED when Task.spec.humanInTheLoop is enabled, as the controller
 	// needs to wrap the command with a sleep to keep the container running.
 	//
 	// Example:
 	//   command: ["sh", "-c", "gemini --yolo -p \"$(cat /workspace/task.md)\""]
 	//
-	// The command will be wrapped to:
+	// When humanInTheLoop is enabled on a Task, the command will be wrapped to:
 	//   sh -c 'original-command; sleep $KUBETASK_KEEP_ALIVE_SECONDS'
 	// +optional
 	Command []string `json:"command,omitempty"`

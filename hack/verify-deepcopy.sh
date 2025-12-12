@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright Contributors to the CodeSweep project
+# Copyright Contributors to the KubeTask project
 
 set -o errexit
 set -o nounset
