@@ -54,15 +54,43 @@ type GitContext struct {
 	Repository string `json:"repository"`
 
 	// Path is the path within the repository to mount.
-	// Can be a file or directory.
+	// Can be a file or directory. If empty, the entire repository is mounted.
+	//
+	// Note on .git directory:
+	//   - If Path is empty (entire repo): The mounted directory WILL contain .git/
+	//   - If Path is specified (subdirectory): The mounted directory will NOT contain .git/
+	//
 	// Example: ".claude/", "docs/guide.md"
 	// +optional
 	Path string `json:"path,omitempty"`
 
 	// Ref is the Git reference (branch, tag, or commit SHA).
-	// Defaults to "main" if not specified.
+	// Defaults to "HEAD" if not specified.
 	// +optional
+	// +kubebuilder:default="HEAD"
 	Ref string `json:"ref,omitempty"`
+
+	// Depth specifies the clone depth for shallow cloning.
+	// 1 means shallow clone (fastest), 0 means full clone.
+	// Defaults to 1 for efficiency.
+	// +optional
+	// +kubebuilder:default=1
+	Depth *int `json:"depth,omitempty"`
+
+	// SecretRef references a Secret containing Git credentials.
+	// The Secret should contain one of:
+	//   - "username" + "password": For HTTPS token-based auth (password can be a PAT)
+	//   - "ssh-privatekey": For SSH key-based auth
+	// If not specified, anonymous clone is attempted.
+	// +optional
+	SecretRef *GitSecretReference `json:"secretRef,omitempty"`
+}
+
+// GitSecretReference references a Secret for Git authentication.
+type GitSecretReference struct {
+	// Name of the Secret containing Git credentials.
+	// +required
+	Name string `json:"name"`
 }
 
 // FileSource represents a source for file content (used in Context CRD)

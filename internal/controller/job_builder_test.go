@@ -89,7 +89,7 @@ func TestBuildJob_BasicTask(t *testing.T) {
 		serviceAccountName: "test-sa",
 	}
 
-	job := buildJob(task, "test-task-job", cfg, nil, nil, nil)
+	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, nil)
 
 	// Verify job metadata
 	if job.Name != "test-task-job" {
@@ -195,7 +195,7 @@ func TestBuildJob_WithCredentials(t *testing.T) {
 		},
 	}
 
-	job := buildJob(task, "test-task-job", cfg, nil, nil, nil)
+	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, nil)
 
 	container := job.Spec.Template.Spec.Containers[0]
 
@@ -266,7 +266,7 @@ func TestBuildJob_WithHumanInTheLoop(t *testing.T) {
 		},
 	}
 
-	job := buildJob(task, "test-task-job", cfg, nil, nil, nil)
+	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, nil)
 
 	container := job.Spec.Template.Spec.Containers[0]
 
@@ -345,7 +345,7 @@ func TestBuildJob_WithPodScheduling(t *testing.T) {
 		},
 	}
 
-	job := buildJob(task, "test-task-job", cfg, nil, nil, nil)
+	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, nil)
 
 	podSpec := job.Spec.Template.Spec
 
@@ -409,7 +409,7 @@ func TestBuildJob_WithContextConfigMap(t *testing.T) {
 		{filePath: "/workspace/task.md"},
 	}
 
-	job := buildJob(task, "test-task-job", cfg, contextConfigMap, fileMounts, nil)
+	job := buildJob(task, "test-task-job", cfg, contextConfigMap, fileMounts, nil, nil)
 
 	// Verify context-files volume exists
 	var foundContextVolume bool
@@ -466,7 +466,7 @@ func TestBuildJob_WithDirMounts(t *testing.T) {
 		},
 	}
 
-	job := buildJob(task, "test-task-job", cfg, nil, nil, dirMounts)
+	job := buildJob(task, "test-task-job", cfg, nil, nil, dirMounts, nil)
 
 	// Verify dir-mount volume exists
 	var foundDirVolume bool
@@ -495,6 +495,220 @@ func TestBuildJob_WithDirMounts(t *testing.T) {
 	}
 	if !foundMount {
 		t.Errorf("Volume mount for /workspace/guides not found")
+	}
+}
+
+func TestBuildJob_WithGitMounts(t *testing.T) {
+	task := &kubetaskv1alpha1.Task{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-task",
+			Namespace: "default",
+			UID:       "test-uid",
+		},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kubetask.io/v1alpha1",
+			Kind:       "Task",
+		},
+	}
+
+	cfg := agentConfig{
+		agentImage:         "test-agent:v1.0.0",
+		workspaceDir:       "/workspace",
+		serviceAccountName: "test-sa",
+	}
+
+	gitMounts := []gitMount{
+		{
+			contextName: "my-context",
+			repository:  "https://github.com/org/repo.git",
+			ref:         "main",
+			repoPath:    ".claude/",
+			mountPath:   "/workspace/.claude",
+			depth:       1,
+			secretName:  "",
+		},
+	}
+
+	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, gitMounts)
+
+	// Verify init container exists
+	if len(job.Spec.Template.Spec.InitContainers) != 1 {
+		t.Fatalf("Expected 1 init container, got %d", len(job.Spec.Template.Spec.InitContainers))
+	}
+
+	initContainer := job.Spec.Template.Spec.InitContainers[0]
+	if initContainer.Name != "git-sync-0" {
+		t.Errorf("Init container name = %q, want %q", initContainer.Name, "git-sync-0")
+	}
+	if initContainer.Image != DefaultGitSyncImage {
+		t.Errorf("Init container image = %q, want %q", initContainer.Image, DefaultGitSyncImage)
+	}
+
+	// Verify environment variables
+	envMap := make(map[string]string)
+	for _, env := range initContainer.Env {
+		envMap[env.Name] = env.Value
+	}
+	if envMap["GITSYNC_REPO"] != "https://github.com/org/repo.git" {
+		t.Errorf("GITSYNC_REPO = %q, want %q", envMap["GITSYNC_REPO"], "https://github.com/org/repo.git")
+	}
+	if envMap["GITSYNC_REF"] != "main" {
+		t.Errorf("GITSYNC_REF = %q, want %q", envMap["GITSYNC_REF"], "main")
+	}
+	if envMap["GITSYNC_ONE_TIME"] != "true" {
+		t.Errorf("GITSYNC_ONE_TIME = %q, want %q", envMap["GITSYNC_ONE_TIME"], "true")
+	}
+	if envMap["GITSYNC_DEPTH"] != "1" {
+		t.Errorf("GITSYNC_DEPTH = %q, want %q", envMap["GITSYNC_DEPTH"], "1")
+	}
+
+	// Verify emptyDir volume exists
+	var foundGitVolume bool
+	for _, vol := range job.Spec.Template.Spec.Volumes {
+		if vol.Name == "git-context-0" && vol.EmptyDir != nil {
+			foundGitVolume = true
+		}
+	}
+	if !foundGitVolume {
+		t.Errorf("git-context-0 emptyDir volume not found")
+	}
+
+	// Verify volume mount in agent container with correct subPath
+	container := job.Spec.Template.Spec.Containers[0]
+	var foundMount bool
+	for _, mount := range container.VolumeMounts {
+		if mount.MountPath == "/workspace/.claude" && mount.Name == "git-context-0" {
+			foundMount = true
+			expectedSubPath := "repo/.claude/"
+			if mount.SubPath != expectedSubPath {
+				t.Errorf("Volume mount SubPath = %q, want %q", mount.SubPath, expectedSubPath)
+			}
+		}
+	}
+	if !foundMount {
+		t.Errorf("Volume mount for /workspace/.claude not found")
+	}
+}
+
+func TestBuildJob_WithGitMountsAndAuth(t *testing.T) {
+	task := &kubetaskv1alpha1.Task{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-task",
+			Namespace: "default",
+			UID:       "test-uid",
+		},
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "kubetask.io/v1alpha1",
+			Kind:       "Task",
+		},
+	}
+
+	cfg := agentConfig{
+		agentImage:         "test-agent:v1.0.0",
+		workspaceDir:       "/workspace",
+		serviceAccountName: "test-sa",
+	}
+
+	gitMounts := []gitMount{
+		{
+			contextName: "private-repo",
+			repository:  "https://github.com/org/private-repo.git",
+			ref:         "v1.0.0",
+			repoPath:    "",
+			mountPath:   "/workspace/git-private-repo",
+			depth:       1,
+			secretName:  "git-credentials",
+		},
+	}
+
+	job := buildJob(task, "test-task-job", cfg, nil, nil, nil, gitMounts)
+
+	// Verify init container has auth env vars
+	initContainer := job.Spec.Template.Spec.InitContainers[0]
+	var foundUsername, foundPassword bool
+	for _, env := range initContainer.Env {
+		if env.Name == "GITSYNC_USERNAME" && env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+			if env.ValueFrom.SecretKeyRef.Name == "git-credentials" && env.ValueFrom.SecretKeyRef.Key == "username" {
+				foundUsername = true
+			}
+		}
+		if env.Name == "GITSYNC_PASSWORD" && env.ValueFrom != nil && env.ValueFrom.SecretKeyRef != nil {
+			if env.ValueFrom.SecretKeyRef.Name == "git-credentials" && env.ValueFrom.SecretKeyRef.Key == "password" {
+				foundPassword = true
+			}
+		}
+	}
+	if !foundUsername {
+		t.Errorf("GITSYNC_USERNAME env var with secret reference not found")
+	}
+	if !foundPassword {
+		t.Errorf("GITSYNC_PASSWORD env var with secret reference not found")
+	}
+
+	// Verify volume mount without subPath (entire repo)
+	container := job.Spec.Template.Spec.Containers[0]
+	var foundMount bool
+	for _, mount := range container.VolumeMounts {
+		if mount.MountPath == "/workspace/git-private-repo" && mount.Name == "git-context-0" {
+			foundMount = true
+			if mount.SubPath != "repo" {
+				t.Errorf("Volume mount SubPath = %q, want %q", mount.SubPath, "repo")
+			}
+		}
+	}
+	if !foundMount {
+		t.Errorf("Volume mount for /workspace/git-private-repo not found")
+	}
+}
+
+func TestBuildGitSyncInitContainer(t *testing.T) {
+	gm := gitMount{
+		contextName: "test-context",
+		repository:  "https://github.com/test/repo.git",
+		ref:         "develop",
+		repoPath:    "docs/",
+		mountPath:   "/workspace/docs",
+		depth:       5,
+		secretName:  "",
+	}
+
+	container := buildGitSyncInitContainer(gm, "git-vol-0", 0)
+
+	if container.Name != "git-sync-0" {
+		t.Errorf("Container name = %q, want %q", container.Name, "git-sync-0")
+	}
+
+	if container.Image != DefaultGitSyncImage {
+		t.Errorf("Container image = %q, want %q", container.Image, DefaultGitSyncImage)
+	}
+
+	// Check env vars
+	envMap := make(map[string]string)
+	for _, env := range container.Env {
+		if env.Value != "" {
+			envMap[env.Name] = env.Value
+		}
+	}
+
+	if envMap["GITSYNC_REPO"] != "https://github.com/test/repo.git" {
+		t.Errorf("GITSYNC_REPO = %q, want %q", envMap["GITSYNC_REPO"], "https://github.com/test/repo.git")
+	}
+	if envMap["GITSYNC_REF"] != "develop" {
+		t.Errorf("GITSYNC_REF = %q, want %q", envMap["GITSYNC_REF"], "develop")
+	}
+	if envMap["GITSYNC_DEPTH"] != "5" {
+		t.Errorf("GITSYNC_DEPTH = %q, want %q", envMap["GITSYNC_DEPTH"], "5")
+	}
+
+	// Verify volume mount
+	if len(container.VolumeMounts) != 1 {
+		t.Fatalf("Expected 1 volume mount, got %d", len(container.VolumeMounts))
+	}
+	if container.VolumeMounts[0].Name != "git-vol-0" {
+		t.Errorf("Volume mount name = %q, want %q", container.VolumeMounts[0].Name, "git-vol-0")
+	}
+	if container.VolumeMounts[0].MountPath != "/git" {
+		t.Errorf("Volume mount path = %q, want %q", container.VolumeMounts[0].MountPath, "/git")
 	}
 }
 

@@ -79,22 +79,49 @@ spec:
               git:
                 description: Git context (required when Type == "Git")
                 properties:
+                  depth:
+                    default: 1
+                    description: |-
+                      Depth specifies the clone depth for shallow cloning.
+                      1 means shallow clone (fastest), 0 means full clone.
+                      Defaults to 1 for efficiency.
+                    type: integer
                   path:
                     description: |-
                       Path is the path within the repository to mount.
-                      Can be a file or directory.
+                      Can be a file or directory. If empty, the entire repository is mounted.
+
+                      Note on .git directory:
+                        - If Path is empty (entire repo): The mounted directory WILL contain .git/
+                        - If Path is specified (subdirectory): The mounted directory will NOT contain .git/
+
                       Example: ".claude/", "docs/guide.md"
                     type: string
                   ref:
+                    default: HEAD
                     description: |-
                       Ref is the Git reference (branch, tag, or commit SHA).
-                      Defaults to "main" if not specified.
+                      Defaults to "HEAD" if not specified.
                     type: string
                   repository:
                     description: |-
                       Repository is the Git repository URL.
                       Example: "https://github.com/org/contexts"
                     type: string
+                  secretRef:
+                    description: |-
+                      SecretRef references a Secret containing Git credentials.
+                      The Secret should contain one of:
+                        - "username" + "password": For HTTPS token-based auth (password can be a PAT)
+                        - "ssh-privatekey": For SSH key-based auth
+                      If not specified, anonymous clone is attempted.
+                    properties:
+                      name:
+                        description: Name of the Secret containing Git credentials.
+                        type: string
+                    required:
+                    - name
+                    type: object
                 required:
                 - repository
                 type: object

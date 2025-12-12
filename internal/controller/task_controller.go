@@ -138,7 +138,7 @@ func (r *TaskReconciler) initializeTask(ctx context.Context, task *kubetaskv1alp
 	//   1. Agent.contexts (Agent-level Context CRD references)
 	//   2. Task.contexts (Task-specific Context CRD references)
 	//   3. Task.description (highest, becomes start of ${WORKSPACE_DIR}/task.md)
-	contextConfigMap, fileMounts, dirMounts, err := r.processAllContexts(ctx, task, agentConfig)
+	contextConfigMap, fileMounts, dirMounts, gitMounts, err := r.processAllContexts(ctx, task, agentConfig)
 	if err != nil {
 		log.Error(err, "unable to process contexts")
 		return ctrl.Result{}, err
@@ -155,7 +155,7 @@ func (r *TaskReconciler) initializeTask(ctx context.Context, task *kubetaskv1alp
 	}
 
 	// Create Job with agent configuration and context mounts
-	job := buildJob(task, jobName, agentConfig, contextConfigMap, fileMounts, dirMounts)
+	job := buildJob(task, jobName, agentConfig, contextConfigMap, fileMounts, dirMounts, gitMounts)
 
 	if err := r.Create(ctx, job); err != nil {
 		log.Error(err, "unable to create Job", "job", jobName)
@@ -290,7 +290,6 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-
 // getAgentConfig retrieves the agent configuration from Agent.
 // Returns an error if Agent is not found or invalid.
 func (r *TaskReconciler) getAgentConfig(ctx context.Context, task *kubetaskv1alpha1.Task) (agentConfig, error) {
@@ -343,26 +342,28 @@ func (r *TaskReconciler) getAgentConfig(ctx context.Context, task *kubetaskv1alp
 	}, nil
 }
 
-
 // processAllContexts processes all contexts from Agent and Task, resolving Context CRs
-// and returning the ConfigMap, file mounts, and directory mounts for the Job.
+// and returning the ConfigMap, file mounts, directory mounts, and git mounts for the Job.
 //
 // Content order in task.md (top to bottom):
 //  1. Task.description (appears first in task.md)
 //  2. Agent.contexts (Agent-level Context CRD references)
 //  3. Task.contexts (Task-specific Context CRD references, appears last)
-func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv1alpha1.Task, cfg agentConfig) (*corev1.ConfigMap, []fileMount, []dirMount, error) {
+func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv1alpha1.Task, cfg agentConfig) (*corev1.ConfigMap, []fileMount, []dirMount, []gitMount, error) {
 	var resolved []resolvedContext
 	var dirMounts []dirMount
+	var gitMounts []gitMount
 
 	// 1. Resolve Agent.contexts (appears after description in task.md)
 	for _, ref := range cfg.contexts {
-		rc, dm, err := r.resolveContextRef(ctx, ref, task.Namespace)
+		rc, dm, gm, err := r.resolveContextRef(ctx, ref, task.Namespace, cfg.workspaceDir)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to resolve Agent context %q: %w", ref.Name, err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to resolve Agent context %q: %w", ref.Name, err)
 		}
 		if dm != nil {
 			dirMounts = append(dirMounts, *dm)
+		} else if gm != nil {
+			gitMounts = append(gitMounts, *gm)
 		} else if rc != nil {
 			resolved = append(resolved, *rc)
 		}
@@ -370,12 +371,14 @@ func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv
 
 	// 2. Resolve Task.contexts (appears last in task.md)
 	for _, ref := range task.Spec.Contexts {
-		rc, dm, err := r.resolveContextRef(ctx, ref, task.Namespace)
+		rc, dm, gm, err := r.resolveContextRef(ctx, ref, task.Namespace, cfg.workspaceDir)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to resolve Task context %q: %w", ref.Name, err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to resolve Task context %q: %w", ref.Name, err)
 		}
 		if dm != nil {
 			dirMounts = append(dirMounts, *dm)
+		} else if gm != nil {
+			gitMounts = append(gitMounts, *gm)
 		} else if rc != nil {
 			resolved = append(resolved, *rc)
 		}
@@ -448,11 +451,11 @@ func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv
 		}
 	}
 
-	return configMap, fileMounts, dirMounts, nil
+	return configMap, fileMounts, dirMounts, gitMounts, nil
 }
 
 // resolveContextRef resolves a ContextMount reference to a Context CR
-func (r *TaskReconciler) resolveContextRef(ctx context.Context, ref kubetaskv1alpha1.ContextMount, defaultNS string) (*resolvedContext, *dirMount, error) {
+func (r *TaskReconciler) resolveContextRef(ctx context.Context, ref kubetaskv1alpha1.ContextMount, defaultNS, workspaceDir string) (*resolvedContext, *dirMount, *gitMount, error) {
 	namespace := ref.Namespace
 	if namespace == "" {
 		namespace = defaultNS
@@ -461,17 +464,21 @@ func (r *TaskReconciler) resolveContextRef(ctx context.Context, ref kubetaskv1al
 	// Fetch the Context CR
 	contextCR := &kubetaskv1alpha1.Context{}
 	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, contextCR); err != nil {
-		return nil, nil, fmt.Errorf("Context %q not found in namespace %q: %w", ref.Name, namespace, err)
+		return nil, nil, nil, fmt.Errorf("Context %q not found in namespace %q: %w", ref.Name, namespace, err)
 	}
 
 	// Resolve content based on context type
-	content, dm, err := r.resolveContextSpec(ctx, namespace, ref.Name, &contextCR.Spec, ref.MountPath)
+	content, dm, gm, err := r.resolveContextSpec(ctx, namespace, ref.Name, workspaceDir, &contextCR.Spec, ref.MountPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if dm != nil {
-		return nil, dm, nil
+		return nil, dm, nil, nil
+	}
+
+	if gm != nil {
+		return nil, nil, gm, nil
 	}
 
 	return &resolvedContext{
@@ -480,28 +487,29 @@ func (r *TaskReconciler) resolveContextRef(ctx context.Context, ref kubetaskv1al
 		ctxType:   string(contextCR.Spec.Type),
 		content:   content,
 		mountPath: ref.MountPath,
-	}, nil, nil
+	}, nil, nil, nil
 }
 
 // resolveContextSpec resolves content from a ContextSpec (used by Context CRD)
-func (r *TaskReconciler) resolveContextSpec(ctx context.Context, namespace, name string, spec *kubetaskv1alpha1.ContextSpec, mountPath string) (string, *dirMount, error) {
+// Returns: content string, dirMount pointer, gitMount pointer, error
+func (r *TaskReconciler) resolveContextSpec(ctx context.Context, namespace, name, workspaceDir string, spec *kubetaskv1alpha1.ContextSpec, mountPath string) (string, *dirMount, *gitMount, error) {
 	switch spec.Type {
 	case kubetaskv1alpha1.ContextTypeInline:
 		if spec.Inline == nil {
-			return "", nil, nil
+			return "", nil, nil, nil
 		}
-		return spec.Inline.Content, nil, nil
+		return spec.Inline.Content, nil, nil, nil
 
 	case kubetaskv1alpha1.ContextTypeConfigMap:
 		if spec.ConfigMap == nil {
-			return "", nil, nil
+			return "", nil, nil, nil
 		}
 		cm := spec.ConfigMap
 
 		// If Key is specified, return the content
 		if cm.Key != "" {
 			content, err := r.getConfigMapKey(ctx, namespace, cm.Name, cm.Key, cm.Optional)
-			return content, nil, err
+			return content, nil, nil, err
 		}
 
 		// If Key is not specified but mountPath is, return a directory mount
@@ -514,25 +522,55 @@ func (r *TaskReconciler) resolveContextSpec(ctx context.Context, namespace, name
 				dirPath:       mountPath,
 				configMapName: cm.Name,
 				optional:      optional,
-			}, nil
+			}, nil, nil
 		}
 
 		// If Key is not specified and mountPath is empty, aggregate all keys to task.md
 		content, err := r.getConfigMapAllKeys(ctx, namespace, cm.Name, cm.Optional)
-		return content, nil, err
+		return content, nil, nil, err
 
 	case kubetaskv1alpha1.ContextTypeGit:
-		// TODO: Implement Git context support
-		// This would require:
-		// 1. Adding an init container with git-sync or git-init to clone the repository
-		// 2. Handling authentication for private repositories (SSH keys or tokens)
-		// 3. Mounting the cloned content at the specified mountPath
-		// 4. Supporting spec.Git.Path to select specific files/directories from the repo
-		// 5. Supporting spec.Git.Ref to checkout specific branch/tag/commit
-		return "", nil, fmt.Errorf("Git context type is not yet implemented")
+		if spec.Git == nil {
+			return "", nil, nil, nil
+		}
+		git := spec.Git
+
+		// Determine mount path: use specified path or default to ${WORKSPACE_DIR}/git-<context-name>/
+		resolvedMountPath := mountPath
+		if resolvedMountPath == "" {
+			resolvedMountPath = workspaceDir + "/git-" + name
+		}
+
+		// Determine clone depth: default to 1 (shallow clone)
+		depth := 1
+		if git.Depth != nil && *git.Depth > 0 {
+			depth = *git.Depth
+		}
+
+		// Determine ref: default to HEAD
+		ref := git.Ref
+		if ref == "" {
+			ref = "HEAD"
+		}
+
+		// Get secret name if specified
+		secretName := ""
+		if git.SecretRef != nil {
+			secretName = git.SecretRef.Name
+		}
+
+		return "", nil, &gitMount{
+			contextName: name,
+			repository:  git.Repository,
+			ref:         ref,
+			repoPath:    git.Path,
+			mountPath:   resolvedMountPath,
+			depth:       depth,
+			secretName:  secretName,
+		}, nil
 
 	default:
-		return "", nil, fmt.Errorf("unknown context type: %s", spec.Type)
+		return "", nil, nil, fmt.Errorf("unknown context type: %s", spec.Type)
 	}
 }
 
