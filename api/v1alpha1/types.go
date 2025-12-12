@@ -94,9 +94,10 @@ type ContextMount struct {
 
 	// MountPath specifies where this context should be mounted in the agent pod.
 	// If specified, the context content is written to this file path.
-	// Example: "/workspace/guides/coding-standards.md"
+	// Example: "${WORKSPACE_DIR}/guides/coding-standards.md"
 	//
-	// If NOT specified (empty), the context content is appended to /workspace/task.md
+	// If NOT specified (empty), the context content is appended to ${WORKSPACE_DIR}/task.md
+	// (where WORKSPACE_DIR is configured in Agent.spec.workspaceDir, defaulting to "/workspace")
 	// in a structured XML format:
 	//   <context name="coding-standards" namespace="default" type="File">
 	//   ... content ...
@@ -151,7 +152,8 @@ type Task struct {
 // TaskSpec defines the Task configuration
 type TaskSpec struct {
 	// Description is the task instruction/prompt.
-	// The controller creates /workspace/task.md with this content.
+	// The controller creates ${WORKSPACE_DIR}/task.md with this content
+	// (where WORKSPACE_DIR is configured in Agent.spec.workspaceDir, defaulting to "/workspace").
 	// This is the primary way to tell the agent what to do.
 	//
 	// Example:
@@ -165,7 +167,7 @@ type TaskSpec struct {
 	// Context priority (lowest to highest):
 	//   1. Agent.contexts (Agent-level defaults)
 	//   2. Task.contexts (Task-specific contexts)
-	//   3. Task.description (highest, becomes /workspace/task.md)
+	//   3. Task.description (highest, becomes ${WORKSPACE_DIR}/task.md)
 	// +optional
 	Contexts []ContextMount `json:"contexts,omitempty"`
 
@@ -231,6 +233,15 @@ type AgentSpec struct {
 	// +optional
 	AgentImage string `json:"agentImage,omitempty"`
 
+	// WorkspaceDir specifies the working directory inside the agent container.
+	// This is where task.md and context files are mounted.
+	// The agent image must support the WORKSPACE_DIR environment variable.
+	// Defaults to "/workspace" if not specified.
+	// +optional
+	// +kubebuilder:default="/workspace"
+	// +kubebuilder:validation:Pattern=`^/.*`
+	WorkspaceDir string `json:"workspaceDir,omitempty"`
+
 	// HumanInTheLoop configures whether tasks using this agent require human participation.
 	// When enabled, the agent container will remain running after task completion,
 	// allowing users to exec into the container for debugging, review, or manual intervention.
@@ -261,7 +272,7 @@ type AgentSpec struct {
 	// Context priority (lowest to highest):
 	//   1. Agent.contexts (Agent-level defaults)
 	//   2. Task.contexts (Task-specific contexts)
-	//   3. Task.description/descriptionRef (highest, becomes /workspace/task.md)
+	//   3. Task.description (highest, becomes ${WORKSPACE_DIR}/task.md)
 	//
 	// Use this for organization-wide defaults like coding standards, security policies,
 	// or common tool configurations that should apply to all tasks.

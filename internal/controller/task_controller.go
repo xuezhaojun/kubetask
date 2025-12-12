@@ -28,6 +28,9 @@ const (
 	// DefaultAgentImage is the default agent container image
 	DefaultAgentImage = "quay.io/kubetask/kubetask-agent-gemini:latest"
 
+	// DefaultWorkspaceDir is the default workspace directory for agent containers
+	DefaultWorkspaceDir = "/workspace"
+
 	// ContextConfigMapSuffix is the suffix for ConfigMap names created for context
 	ContextConfigMapSuffix = "-context"
 
@@ -134,7 +137,7 @@ func (r *TaskReconciler) initializeTask(ctx context.Context, task *kubetaskv1alp
 	// Priority (lowest to highest):
 	//   1. Agent.contexts (Agent-level Context CRD references)
 	//   2. Task.contexts (Task-specific Context CRD references)
-	//   3. Task.description (highest, becomes start of /workspace/task.md)
+	//   3. Task.description (highest, becomes start of ${WORKSPACE_DIR}/task.md)
 	contextConfigMap, fileMounts, dirMounts, err := r.processAllContexts(ctx, task, agentConfig)
 	if err != nil {
 		log.Error(err, "unable to process contexts")
@@ -291,6 +294,7 @@ func (r *TaskReconciler) SetupWithManager(mgr ctrl.Manager) error {
 type agentConfig struct {
 	agentImage         string
 	command            []string
+	workspaceDir       string
 	contexts           []kubetaskv1alpha1.ContextMount
 	credentials        []kubetaskv1alpha1.Credential
 	podSpec            *kubetaskv1alpha1.AgentPodSpec
@@ -327,6 +331,12 @@ func (r *TaskReconciler) getAgentConfig(ctx context.Context, task *kubetaskv1alp
 		agentImage = agent.Spec.AgentImage
 	}
 
+	// Get workspace directory (optional, has default)
+	workspaceDir := DefaultWorkspaceDir
+	if agent.Spec.WorkspaceDir != "" {
+		workspaceDir = agent.Spec.WorkspaceDir
+	}
+
 	// ServiceAccountName is required
 	if agent.Spec.ServiceAccountName == "" {
 		return agentConfig{}, fmt.Errorf("Agent %q is missing required field serviceAccountName", agentName)
@@ -335,6 +345,7 @@ func (r *TaskReconciler) getAgentConfig(ctx context.Context, task *kubetaskv1alp
 	return agentConfig{
 		agentImage:         agentImage,
 		command:            agent.Spec.Command,
+		workspaceDir:       workspaceDir,
 		contexts:           agent.Spec.Contexts,
 		credentials:        agent.Spec.Credentials,
 		podSpec:            agent.Spec.PodSpec,
@@ -370,7 +381,7 @@ type resolvedContext struct {
 // Priority (lowest to highest):
 //  1. Agent.contexts (Agent-level Context CRD references)
 //  2. Task.contexts (Task-specific Context CRD references)
-//  3. Task.description (highest, becomes start of /workspace/task.md)
+//  3. Task.description (highest, becomes start of ${WORKSPACE_DIR}/task.md)
 func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv1alpha1.Task, cfg agentConfig) (*corev1.ConfigMap, []fileMount, []dirMount, error) {
 	var resolved []resolvedContext
 	var dirMounts []dirMount
@@ -401,7 +412,7 @@ func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv
 		}
 	}
 
-	// 3. Handle Task.description (highest priority, becomes /workspace/task.md)
+	// 3. Handle Task.description (highest priority, becomes ${WORKSPACE_DIR}/task.md)
 	var taskDescription string
 	if task.Spec.Description != nil && *task.Spec.Description != "" {
 		taskDescription = *task.Spec.Description
@@ -434,10 +445,12 @@ func (r *TaskReconciler) processAllContexts(ctx context.Context, task *kubetaskv
 	}
 
 	// Create task.md if there's any content
+	// Mount at the configured workspace directory
+	taskMdPath := cfg.workspaceDir + "/task.md"
 	if len(taskMdParts) > 0 {
 		taskMdContent := strings.Join(taskMdParts, "\n\n")
 		configMapData["workspace-task.md"] = taskMdContent
-		fileMounts = append(fileMounts, fileMount{filePath: "/workspace/task.md"})
+		fileMounts = append(fileMounts, fileMount{filePath: taskMdPath})
 	}
 
 	// Create ConfigMap if there's any content
@@ -585,6 +598,7 @@ func (r *TaskReconciler) buildJob(task *kubetaskv1alpha1.Task, jobName string, c
 	envVars = append(envVars,
 		corev1.EnvVar{Name: "TASK_NAME", Value: task.Name},
 		corev1.EnvVar{Name: "TASK_NAMESPACE", Value: task.Namespace},
+		corev1.EnvVar{Name: "WORKSPACE_DIR", Value: cfg.workspaceDir},
 	)
 
 	// Add human-in-the-loop keep-alive environment variable if enabled

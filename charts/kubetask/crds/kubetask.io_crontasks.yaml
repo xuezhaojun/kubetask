@@ -119,7 +119,7 @@ spec:
                           Context priority (lowest to highest):
                             1. Agent.contexts (Agent-level defaults)
                             2. Task.contexts (Task-specific contexts)
-                            3. Task.description (highest, becomes /workspace/task.md)
+                            3. Task.description (highest, becomes ${WORKSPACE_DIR}/task.md)
                         items:
                           description: |-
                             ContextMount references a Context resource and specifies how to mount it.
@@ -129,9 +129,10 @@ spec:
                               description: |-
                                 MountPath specifies where this context should be mounted in the agent pod.
                                 If specified, the context content is written to this file path.
-                                Example: "/workspace/guides/coding-standards.md"
+                                Example: "${WORKSPACE_DIR}/guides/coding-standards.md"
 
-                                If NOT specified (empty), the context content is appended to /workspace/task.md
+                                If NOT specified (empty), the context content is appended to ${WORKSPACE_DIR}/task.md
+                                (where WORKSPACE_DIR is configured in Agent.spec.workspaceDir, defaulting to "/workspace")
                                 in a structured XML format:
                                   <context name="coding-standards" namespace="default" type="File">
                                   ... content ...
@@ -154,7 +155,8 @@ spec:
                       description:
                         description: |-
                           Description is the task instruction/prompt.
-                          The controller creates /workspace/task.md with this content.
+                          The controller creates ${WORKSPACE_DIR}/task.md with this content
+                          (where WORKSPACE_DIR is configured in Agent.spec.workspaceDir, defaulting to "/workspace").
                           This is the primary way to tell the agent what to do.
 
                           Example:
